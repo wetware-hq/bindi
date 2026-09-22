@@ -1,0 +1,44 @@
+[project]
+name = "bindi"
+version = "0.1.0"
+description = "Generate and curate protein binders via BindCraft2 campaigns."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [{ name = "wetware", email = "hellowetware@gmail.com" }]
+keywords = ["protein", "binder", "BindCraft", "de novo design"]
+classifiers = [
+  "Intended Audience :: Science/Research",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/wetwarehq/bindi"
+Repository = "https://github.com/wetwarehq/bindi"
+
+[project.scripts]
+bindi = "bindi.cli:main"
+bd01 = "bindi.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bindi"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "/src",
+  "/tests",
+  "/campaigns",
+  "/fixtures",
+  "/README.md",
+  "/LICENSE",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

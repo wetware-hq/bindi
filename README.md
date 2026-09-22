@@ -1,94 +1,36 @@
 # Bindi
 
-Bindi generates and curates protein binders for a target. A frontier agent fills a **campaign** policy at runtime (protein, modality, hotspots, how many designs to keep). Bindi runs [BindCraft2](https://github.com/PacesaLab/BindCraft2) to design, then writes a **gallery** directory of ranked, scored candidates for experimental follow-up.
+Bindi helps teams **design and shortlist protein binders** against a target—for example, molecules that might block PD-L1, stick to a tumor antigen, or modulate a pathway of interest.
 
-**Frontier agents:** read [AGENT.md](AGENT.md) for recruitment, policy authoring, and gallery delivery.
+You describe the biological goal in plain language; a computational workflow runs [BindCraft2](https://github.com/PacesaLab/BindCraft2) to propose candidate binders and returns a **gallery**: a ranked set of designs with scores and structures where available, ready for lab review or downstream planning.
 
-## Resource shape
+## What you get
 
-| Slot | Type | Role |
-| --- | --- | --- |
-| `campaign` | policy (`bindi.policy.v1`) | Target and design parameters |
-| `gallery` | directory (`bindi.gallery.v1`) | Curated binders, ranked |
+- **Ranked candidates** — designs ordered by interface and quality metrics (for example predicted interface confidence).
+- **Sequences and structures** — amino-acid sequences and structural files when the run produces them.
+- **Traceability** — each gallery links back to the campaign folder and scoring table used to build it.
 
-Capabilities: **generate**, **curate**.
+## Example use case
 
-```bash
-bindi recruit   # JSON descriptor for worker recruitment
-```
+**Goal:** De novo miniprotein binders against human PD-L1 to interfere with the PD-1 interaction.
 
-## Campaign policy
+A collaborator or agent configures a **campaign** (target, binder type, how many designs to keep). Bindi runs design, then curation, and writes a **gallery** directory with the top designs.
 
-Shipped example (`campaigns/pdl1.json`):
-
-```json
-{
-  "schema": "bindi.policy.v1",
-  "bindcraft": {
-    "target": "hPDL1",
-    "modality": "binder",
-    "number_of_final_designs": 10,
-    "project_folder": "results/pdl1"
-  },
-  "curation": { "rank_on": ["i_pDAE"], "top_n": 10 },
-  "gallery": "gallery"
-}
-```
-
-Bare BindCraft2 JSON is also accepted; bindi wraps it automatically.
-
-From a one-line natural-language intent (starter only — adjust paths and hotspots before a real run):
-
-```bash
-bindi stub "VHH binders for human PD-L1" --target hPDL1 --modality VHH --designs 5
-```
-
-## Commands
-
-Install (no runtime dependencies beyond Python):
-
-```bash
-uv pip install -e .
-```
-
-| Command | Action |
-| --- | --- |
-| `bindi run campaigns/pdl1.json` | `bindcraft design` then build gallery |
-| `bindi generate <policy>` | Design only |
-| `bindi curate <policy>` | Gallery from an existing `project_folder` |
-| `bindi run <policy> --dry-run` | Fixture pipeline without GPU |
-
-Generation requires `bindcraft` on `PATH` (or set `BINDCRAFT_CMD`). Use `--dry-run` to test curation locally.
-
-Gallery layout:
+## Gallery layout
 
 ```text
 gallery/
-  index.json      manifest (bindi.gallery.v1)
-  ranked.csv      shortlist table
-  structures/     mmCIF files when present in the campaign folder
+  index.json      summary of ranked designs and scores
+  ranked.csv      spreadsheet-friendly shortlist
+  structures/     3D structure files (mmCIF), when available
 ```
 
-## Container
+## For computational workflows
 
-Package at the source for web workers:
+Installation, command reference, containers, and the Python API live in this repository for engineers and **frontier AI** that recruit bindi as a worker resource.
 
-```bash
-# After building BindCraft2's image as bindcraft:local
-docker build -f containers/Dockerfile -t bindi:local .
-docker run --gpus all -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
-```
-
-## Python API
-
-```python
-from bindi import run, curate, load_policy
-
-policy = load_policy("campaigns/pdl1.json")
-outcome = run(policy, dry_run=True)
-print(outcome["curate"]["gallery"])
-```
+**Frontier agents:** use [AGENT.md](AGENT.md) — recruitment contract, policy authoring, and gallery handoff. Clinicians and program leads can stay on this page.
 
 ## License
 
-MIT. BindCraft2 is a separate dependency with its own license; see the [BindCraft2 repository](https://github.com/PacesaLab/BindCraft2).
+MIT. BindCraft2 is a separate tool with its own license; see the [BindCraft2 repository](https://github.com/PacesaLab/BindCraft2).

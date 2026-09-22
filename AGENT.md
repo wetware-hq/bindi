@@ -3,194 +3,193 @@ schema: wetware.agent.v1
 resource: bindi
 resource_schema: wetware.resource.v1
 version: 0.1.0
-capabilities:
-  - generate
-  - curate
-inputs:
-  campaign:
-    type: policy
-    schema: bindi.policy.v1
-outputs:
-  gallery:
-    type: directory
-    schema: bindi.gallery.v1
-container:
-  dockerfile: containers/Dockerfile
-  image: bindi:local
-  entrypoint: bindi
-recruit_command: bindi recruit
+audience: frontier_intelligence
+human_context: README.md
+descriptor: bindi recruit
 ---
 
-# Bindi — agent operating guide
+# bindi — recruitment contract
 
-You are recruiting **bindi**, a worker-deployable resource that designs de novo protein binders with [BindCraft2](https://github.com/PacesaLab/BindCraft2) and returns a **gallery** of ranked, scored candidates for experimental follow-up.
+This document is for **frontier AI** that selects, configures, and invokes bindi at runtime. Clinicians and collaborators read [README.md](README.md).
 
-Use bindi when the user needs **binder generation and selection** for a protein target (miniprotein, VHH, peptide, or other modality supported by BindCraft2), not when they only need structure prediction, docking without design, or unrelated molecular biology tasks.
+Canonical machine contract: stdout of `bindi recruit` (`wetware.resource.v1`). This file is the prose mirror of that descriptor plus operational rules not encoded in JSON.
 
-Human-facing overview: [README.md](README.md). Machine-readable contract: `bindi recruit` → `wetware.resource.v1` JSON (see [src/bindi/resource.py](src/bindi/resource.py)).
+## Identity
 
-## Contract
+| Field | Value |
+| --- | --- |
+| `name` | `bindi` |
+| `tool` | BindCraft2 CLI (`bindcraft`) — https://github.com/PacesaLab/BindCraft2 |
+| `capabilities` | `generate`, `curate` |
+| `worker_shape` | container `containers/Dockerfile`, `ENTRYPOINT bindi`, base image must provide `bindcraft` |
 
-| Slot | Schema | You provide |
+## Slots
+
+### Input: `campaign` (`bindi.policy.v1`)
+
+You **author** this object from the user’s natural-language request before invoking bindi.
+
+Required semantics:
+
+| Path | Type | Rule |
 | --- | --- | --- |
-| **campaign** (input) | `bindi.policy.v1` | Target, modality, design count, output paths, curation metrics — derived from the user’s natural-language intent |
-| **gallery** (output) | `bindi.gallery.v1` | Directory with `index.json`, `ranked.csv`, and `structures/` |
+| `schema` | string | `bindi.policy.v1` (auto-added if missing) |
+| `query` | string | Verbatim design intent from user; audit string |
+| `bindcraft` | object | BindCraft2 campaign payload; must include resolvable `target`, `modality`, `project_folder` |
+| `bindcraft.number_of_final_designs` | int | Design budget; default align `curation.top_n` to this unless user specifies otherwise |
+| `curation.rank_on` | string[] | CSV column names for ordering; default `["i_pDAE"]` |
+| `curation.top_n` | int | Gallery shortlist size |
+| `gallery` | string | Relative directory name for output; default `gallery` |
 
-Capabilities:
+**Normalization:** If the payload is bare BindCraft2 JSON (no `schema`), bindi wraps it:
 
-- **generate** — run `bindcraft design` for the campaign.
-- **curate** — rank designs and materialize the gallery from an existing BindCraft2 `project_folder`.
-
-Prefer **`bindi run`** unless generation or curation must run separately (e.g. re-curate after manual QC).
-
-## Recruitment
-
-Before scheduling work on a GPU worker, confirm the descriptor matches expectations:
-
-```bash
-bindi recruit
+```json
+{ "schema": "bindi.policy.v1", "bindcraft": <payload>, "curation": {}, "gallery": "gallery" }
 ```
 
-Recruit bindi when:
+**Path resolution:** `bindcraft.project_folder` and `gallery` are resolved under `--workdir` when relative.
 
-1. The task explicitly asks for **de novo binder design** or a **shortlist of binders** against a target.
-2. BindCraft2-appropriate inputs exist or can be resolved (target identifier, modality, optional hotspot/epitope constraints in `bindcraft`).
-3. The environment provides **`bindcraft` on PATH** (container base `bindcraft:local`) or you will use **`--dry-run`** for pipeline validation only.
-
-Do not recruit bindi for targets or modalities outside BindCraft2’s scope without checking [BindCraft2](https://github.com/PacesaLab/BindCraft2) documentation first.
-
-## Workflow
-
-### 1. Interpret intent → campaign policy
-
-Translate the user query into a **`bindi.policy.v1`** document:
-
-- **`query`** — one-sentence design intent (audit trail for humans).
-- **`bindcraft`** — BindCraft2 campaign fields: `target`, `modality`, `number_of_final_designs`, `project_folder`, plus any BC2-specific options (hotspots, chains, filters).
-- **`curation`** — `rank_on` (metric column names, default `["i_pDAE"]`), `top_n` (shortlist size).
-- **`gallery`** — relative directory name for curated output (default `gallery`).
-
-Starter from natural language (always **review and edit** before a production GPU run):
+**Stub helper** (seed only; you must validate BC2 fields before GPU):
 
 ```bash
-bindi stub "VHH binders for human PD-L1" \
-  --target hPDL1 --modality VHH --designs 10 > campaign.json
+bindi stub "<user intent>" --target <id> --modality <modality> --designs <n>
 ```
 
-Bare BindCraft2 JSON is accepted; bindi wraps it as `bindi.policy.v1` automatically.
+Reference instance: `campaigns/pdl1.json`.
 
-Reference campaign: [campaigns/pdl1.json](campaigns/pdl1.json).
+### Output: `gallery` (`bindi.gallery.v1`)
 
-**Clinical utility bias:** prefer fewer, higher-confidence designs (`top_n` aligned with `number_of_final_designs`), explicit `rank_on` metrics that reflect interface quality (e.g. `i_pDAE`), and a clear `query` linking the design goal to a therapeutic or mechanistic hypothesis. Avoid inflating design counts without a stated experimental capacity.
+Directory produced by `curate` / `run`:
 
-### 2. Validate locally (no GPU)
+| Path | Schema | Role |
+| --- | --- | --- |
+| `index.json` | `bindi.gallery.v1` | Ranked `entries[]` with `design`, `rank`, `scores`, `sequence`, `structure` |
+| `ranked.csv` | tabular | Top `top_n` rows from BindCraft2 ranked table |
+| `structures/*.cif` | mmCIF | Copied when matched under `project_folder` |
 
-```bash
-uv pip install -e .
-pytest
-bindi run campaign.json --dry-run
-```
+Consume `index.json` for programmatic downstream steps; do not infer ranks from filenames alone.
 
-`--dry-run` writes fixture ranked tables under `project_folder` and still builds a real gallery layout. Use this to verify paths, `top_n`, and manifest shape before spending GPU time.
+## Recruitment decision
 
-### 3. Execute
+Recruit bindi **iff** all hold:
 
-**Full pipeline (typical):**
+1. **Task class** ∈ {de novo binder design, binder shortlisting, re-curation of existing BC2 campaign folder}.
+2. **Exclusions:** task is not satisfied by structure prediction only, rigid docking only, or non-design molecular tasks.
+3. **Runtime:** `bindcraft` on `PATH` (or `BINDCRAFT_CMD`) for real `generate`, **or** explicit `dry_run=true` for contract testing only.
+4. **Policy:** you can populate `bindcraft.target` and `bindcraft.modality` per BindCraft2 docs for the organism/modality requested.
 
-```bash
-bindi run campaign.json --workdir /work
-```
+If any fail → do not recruit; choose another resource or ask the user for missing BC2 inputs (target id, epitope/hotspots, modality).
 
-**Split steps:**
+## Capability routing
 
-```bash
-bindi generate campaign.json --workdir /work
-bindi curate campaign.json --workdir /work
-# Optional: bindi curate ... --bindcraft-rank  # delegate ranking to `bindcraft rank`
-```
+| Goal | Command | Notes |
+| --- | --- | --- |
+| Design + gallery | `bindi run <policy> [--workdir W] [--dry-run]` | Default path |
+| Design only | `bindi generate <policy> [--workdir W] [--dry-run]` | Leaves ranked table under `project_folder` |
+| Gallery only | `bindi curate <policy> [--project P] [--workdir W] [--bindcraft-rank]` | Requires `3_Ranked/!_Ranked.csv` or legacy `ranked.csv` |
+| Descriptor | `bindi recruit` | No inputs; prints `wetware.resource.v1` JSON |
 
-Set `BINDCRAFT_CMD` if the executable is not named `bindcraft`.
+Policy may be a file path, or `-` / stdin JSON.
 
-**Worker container** (build BindCraft2 image as `bindcraft:local` first):
+**Preference:** `run` unless you need split phases (e.g. regenerate without re-curating, or curate after external QC).
 
-```bash
-docker build -f containers/Dockerfile -t bindi:local .
-docker run --gpus all -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
-```
-
-Default container command is `bindi recruit` (descriptor only).
-
-### 4. Deliver the gallery
-
-On success, treat **`gallery/`** (or the path in `policy.gallery`) as the primary artifact:
+## Execution graph
 
 ```text
-gallery/
-  index.json      # bindi.gallery.v1 manifest: entries, scores, structure paths
-  ranked.csv      # tabular shortlist (BindCraft2 columns + rank)
-  structures/     # mmCIF copies when found under the campaign folder
+NL query
+  → author bindi.policy.v1 (stub optional)
+  → [optional] bindi run --dry-run   # validates layout; fixture ranked data
+  → bindi run                        # bindcraft design → curate → gallery
+  → read gallery/index.json
+  → hand off gallery path + manifest to parent workflow / user-facing summary
 ```
 
-Read `index.json` for programmatic handoff. Summarize for the user:
-
-- Target, modality, and `query`
-- Top designs by `rank` with key scores from `entries[].scores`
-- Paths to structures and sequences (`Binder_Sequence` when present)
-- Campaign folder (`manifest.campaign`) for traceability
-
-If `generate` failed, do not claim a curated shortlist; surface BindCraft2 stderr/exit code and whether partial outputs exist under `project_folder`.
-
-## Policy fields (quick reference)
+### CLI result JSON (`run`)
 
 ```json
 {
-  "schema": "bindi.policy.v1",
-  "query": "<design intent>",
-  "bindcraft": {
-    "target": "<BindCraft2 target id>",
-    "modality": "binder | VHH | ...",
-    "number_of_final_designs": 10,
-    "project_folder": "results/<campaign>"
+  "generate": {
+    "status": "completed" | "dry_run",
+    "campaign_file": "<path>",
+    "project_folder": "<path>",
+    "gallery": "<path>"
   },
-  "curation": {
-    "rank_on": ["i_pDAE"],
-    "top_n": 10
-  },
-  "gallery": "gallery"
+  "curate": {
+    "schema": "bindi.gallery.v1",
+    "gallery": "<path>",
+    "count": <int>,
+    "structures_copied": <int>,
+    "manifest": "<path>/index.json"
+  }
 }
 ```
 
-Paths in `project_folder` and `gallery` are resolved relative to `--workdir`.
+Non-zero `bindcraft design` → `generate` raises; do not assert gallery completeness.
 
-## Python API
+### Environment
 
-When embedding bindi in a larger agent loop:
+| Variable | Effect |
+| --- | --- |
+| `BINDCRAFT_CMD` | Executable name for `bindcraft` (default `bindcraft`) |
 
-```python
-from bindi import run, curate, load_policy, resource_descriptor
+### Worker container
 
-assert resource_descriptor()["name"] == "bindi"
-policy = load_policy("campaign.json")
-outcome = run(policy, dry_run=False)
-gallery_path = outcome["curate"]["gallery"]
+```bash
+docker build -f containers/Dockerfile -t bindi:local .   # requires bindcraft:local base
+docker run --gpus all -v <mount>:/work -w /work bindi:local run <policy.json>
 ```
 
-## Engineering constraints
+Image default `CMD`: `recruit` (descriptor probe, not a design job).
 
-- **Minimum surface area:** do not fork BindCraft2 inside bindi; pass through `bindcraft` CLI and campaign JSON.
-- **Idempotent curation:** `curate` can rerun on the same `project_folder` to refresh the gallery after new designs land.
-- **No silent success:** non-zero `bindcraft design` exit codes raise; report them to the user.
-- **LoC efficiency:** extend behavior via policy JSON and BC2 options before adding Python.
+## Policy authoring from NL
 
-## Verification checklist
+Map user utterances to `bindcraft` fields explicitly; do not leave implicit defaults for production GPU runs.
 
-Before marking the task done:
+| NL signal | Policy field |
+| --- | --- |
+| protein / target name | `bindcraft.target` (BC2 identifier) |
+| VHH, nanobody, miniprotein, peptide | `bindcraft.modality` |
+| “top N”, “shortlist”, “final designs” | `number_of_final_designs`, `curation.top_n` |
+| epitope, hotspot, interface residue | BC2 hotspot keys inside `bindcraft` (per BindCraft2 spec) |
+| ranking metric, “best interface” | `curation.rank_on` (e.g. `i_pDAE`, `i_pTM`) |
+| output location | `bindcraft.project_folder`, `gallery` |
 
-- [ ] `campaign` validates as `bindi.policy.v1` (or normalizes from bare BC2 JSON).
-- [ ] `bindi run ... --dry-run` succeeds in CI-like environments, or GPU `bindi run` completed on the worker.
-- [ ] `gallery/index.json` has `schema: bindi.gallery.v1` and `entries` length ≤ `top_n`.
-- [ ] User receives ranked designs with scores and file paths, plus any caveats (dry-run, missing structures, metric choice).
+**Optimization objective (when user does not specify):** minimize `number_of_final_designs` consistent with stated experimental throughput; rank on interface-quality metrics; keep `query` aligned with mechanism (e.g. blockade, degradation, detection).
 
-## License note
+## Python surface
 
-Bindi is MIT. BindCraft2 is a separate dependency with its own license; comply with both when deploying workers.
+```python
+from bindi import load_policy, run, curate, resource_descriptor
+
+resource_descriptor()  # wetware.resource.v1
+policy = load_policy("campaign.json")
+outcome = run(policy, workdir=workdir, dry_run=False)
+manifest_path = outcome["curate"]["manifest"]
+```
+
+## Failure modes
+
+| Condition | Agent action |
+| --- | --- |
+| `FileNotFoundError: no ranked table` | Run `generate` first or fix `project_folder` |
+| `bindcraft design failed` exit code | Surface code; inspect `project_folder`; do not fabricate gallery |
+| Empty `entries` | Report zero designs; check BC2 filters and campaign JSON |
+| Missing `structures/` | Non-fatal; sequences may still be in `ranked.csv` / `entries[].sequence` |
+| `--dry-run` | Label all downstream claims as pipeline test, not biological results |
+
+## Done predicate
+
+Recruitment task is complete when:
+
+- `campaign` on disk matches `bindi.policy.v1` (normalized).
+- `gallery/index.json` exists with `"schema": "bindi.gallery.v1"`.
+- `len(entries) <= curation.top_n`.
+- Parent workflow holds `curate.gallery` path and parsed manifest (or explicit failure record).
+
+Local verification without GPU: `python3 -m pytest` in repo; `bindi run <policy> --dry-run`.
+
+## Boundaries
+
+- Do not reimplement BindCraft2 inside bindi; extend via `bindcraft` CLI and policy JSON.
+- `curate` is safe to rerun on the same `project_folder` after new designs appear.
+- License: bindi MIT; BindCraft2 separate — worker images must comply with both.

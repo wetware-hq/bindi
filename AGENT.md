@@ -8,79 +8,50 @@ human_context: README.md
 
 # bindi
 
-De novo **protein binder design + ranked shortlist** via BindCraft2 (`bindcraft`). Clinicians: [README.md](README.md). Machine descriptor: `bindi recruit` → `wetware.resource.v1`.
+Binder design + ranked shortlist via BindCraft2 (`bindcraft`). Descriptor: `bindi recruit`. Humans: [README.md](README.md).
+
+`generate` · `curate` | in: `campaign` (`bindi.policy.v1`) | out: `gallery` (`bindi.gallery.v1`) | worker: `containers/Dockerfile` + `bindcraft` on image
+
+## Recruit iff
+
+Binder design, shortlist, or re-curate BC2 `project_folder`; not structure/dock-only; `bindcraft` or `--dry-run`; `bindcraft.target` + `modality` known or obtainable.
+
+## Policy
+
+`campaigns/pdl1.json` is the reference. Author before invoke:
+
+- `query` — user intent
+- `bindcraft` — `target`, `modality`, `project_folder`, `number_of_final_designs`, BC2 opts
+- `curation.rank_on` — default `["i_pDAE"]`; `top_n` — default `number_of_final_designs`
+- `gallery` — default `gallery`; paths relative to `--workdir`
+
+Bare BC2 JSON auto-wraps. Seed: `bindi stub "<intent>" --target T --modality M --designs N` (validate before GPU).
+
+NL: target→`target`, type→`modality`, N→`number_of_final_designs`/`top_n`, epitope→BC2 hotspots, metric→`rank_on`.
+
+## Invoke
 
 | | |
 | --- | --- |
-| **Capabilities** | `generate` (BC2 design), `curate` (rank → gallery) |
-| **Input** | `campaign` — `bindi.policy.v1` |
-| **Output** | `gallery` — `bindi.gallery.v1` directory |
-| **Worker** | `containers/Dockerfile`; base image must expose `bindcraft` |
+| run (default) | `bindi run <policy> [--workdir W] [--dry-run]` |
+| generate / curate | split steps; curate needs `3_Ranked/!_Ranked.csv` |
+| recruit | `wetware.resource.v1` JSON |
 
-## Recruit when
+Policy = path or stdin `-`. Flow: policy → optional dry-run → run → `gallery/index.json`.
 
-All true:
+Success stdout: `curate.gallery`, `curate.manifest`, `generate.project_folder`. BC2 fail → stop, no gallery claims.
 
-1. Task = binder **design** or **shortlist**, or re-curate an existing BC2 `project_folder`.
-2. Not: structure-only, dock-only, or unrelated mol-bio.
-3. `bindcraft` available (`BINDCRAFT_CMD` optional), **or** `--dry-run` for pipeline test only.
-4. You can set `bindcraft.target` + `bindcraft.modality` per [BindCraft2](https://github.com/PacesaLab/BindCraft2).
+Gallery: `index.json` (`entries`: rank, scores, sequence, structure), `ranked.csv`, `structures/*.cif`. Ranks from manifest only.
 
-Else: other resource, or ask for target id / modality / hotspots.
+Worker: `bindi:local run policy.json` with GPU + `/work` mount.
 
-## Policy (`bindi.policy.v1`)
+## Exit
 
-Author from user NL before invoke. Example: `campaigns/pdl1.json`.
-
-| Field | Rule |
+| | |
 | --- | --- |
-| `query` | User intent (audit) |
-| `bindcraft` | BC2 campaign: `target`, `modality`, `project_folder`, `number_of_final_designs`, + BC2 options |
-| `curation.rank_on` | Default `["i_pDAE"]` |
-| `curation.top_n` | Default = `number_of_final_designs` |
-| `gallery` | Default `"gallery"` |
+| no ranked table | run generate / fix folder |
+| BC2 nonzero | report code |
+| dry-run | not biological results |
+| done | `bindi.policy.v1` + `gallery/index.json` schema `bindi.gallery.v1`, entries ≤ top_n |
 
-Bare BC2 JSON → wrapped as `{schema, bindcraft: payload, curation: {}, gallery: "gallery"}`. Relative paths resolve under `--workdir`.
-
-Seed (edit before GPU): `bindi stub "<intent>" --target T --modality M --designs N`
-
-**NL → fields:** target name → `target`; binder type → `modality`; count/shortlist → `number_of_final_designs` + `top_n`; epitope → BC2 hotspot keys in `bindcraft`; metric → `rank_on`. If unspecified: smallest N consistent with user throughput; prefer interface metrics (`i_pDAE`).
-
-## Commands
-
-| Need | Command |
-| --- | --- |
-| Default | `bindi run <policy.json> [--workdir W] [--dry-run]` |
-| Design only | `bindi generate …` |
-| Gallery only | `bindi curate … [--project P] [--bindcraft-rank]` |
-| Contract JSON | `bindi recruit` |
-
-Policy: file path or stdin (`-`). Prefer `run` unless split steps required.
-
-**Flow:** NL → policy → optional `run --dry-run` → `run` → read `gallery/index.json` → emit `curate.gallery` + manifest.
-
-**`run` stdout (success):** `generate.{status,project_folder}` + `curate.{gallery,manifest,count}`. BC2 nonzero exit → error; no fake gallery.
-
-**Gallery:** `index.json` (`entries[]`: `design`, `rank`, `scores`, `sequence`, `structure`), `ranked.csv`, `structures/*.cif` if found. Use `index.json` for ranks.
-
-**Worker:** `docker run --gpus all -v M:/work -w /work bindi:local run policy.json` (image CMD default = `recruit`).
-
-## Errors
-
-| Signal | Do |
-| --- | --- |
-| No ranked CSV | `generate` first or fix `project_folder` |
-| BC2 failed | Report exit code; no shortlist claims |
-| Empty entries | Report; check BC2 campaign/filters |
-| No structures | OK if sequences in CSV/manifest |
-| `--dry-run` | Mark results as pipeline test |
-
-## Done
-
-- Normalized `bindi.policy.v1` saved.
-- `gallery/index.json` has `schema: bindi.gallery.v1`, `len(entries) ≤ top_n`.
-- Downstream has gallery path + parsed manifest, or logged failure.
-
-**API:** `from bindi import load_policy, run, resource_descriptor`
-
-**Limits:** BC2 via CLI only; `curate` rerunnable on same folder; bindi MIT + BC2 license on workers.
+`from bindi import load_policy, run, resource_descriptor` · BC2 CLI only · curate idempotent on same folder

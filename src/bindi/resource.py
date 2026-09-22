@@ -37,6 +37,7 @@ def resource_descriptor() -> dict[str, Any]:
             "dockerfile": "containers/Dockerfile",
             "entrypoint": ["bindi"],
         },
+        "agent": "AGENT.md",
         "commands": {
             "generate": "bindi generate <campaign.json>",
             "curate": "bindi curate <campaign.json> [--project <folder>]",

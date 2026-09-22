@@ -2,6 +2,8 @@
 
 Bindi generates and curates protein binders for a target. A frontier agent fills a **campaign** policy at runtime (protein, modality, hotspots, how many designs to keep). Bindi runs [BindCraft2](https://github.com/PacesaLab/BindCraft2) to design, then writes a **gallery** directory of ranked, scored candidates for experimental follow-up.
 
+**Frontier agents:** read [AGENT.md](AGENT.md) for recruitment, policy authoring, and gallery delivery.
+
 ## Resource shape
 
 | Slot | Type | Role |

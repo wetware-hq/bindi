@@ -6,7 +6,7 @@ audience: frontier_intelligence
 human_context: README.md
 ---
 
-# bindi
+# Bindi — agent manual
 
 Binder design + ranked shortlist via BindCraft2 (`bindcraft`). Descriptor: `bindi recruit`. Humans: [README.md](README.md).
 

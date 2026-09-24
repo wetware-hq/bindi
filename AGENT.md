@@ -21,7 +21,7 @@ container:
 recruit_command: bindi recruit
 ---
 
-# Bindi — agent operating guide
+# Bindi — agent manual
 
 You are recruiting **bindi**, a worker-deployable resource that designs de novo protein binders with [BindCraft2](https://github.com/PacesaLab/BindCraft2) and returns a **gallery** of ranked, scored candidates for experimental follow-up.
 

@@ -1,0 +1,29 @@
+# Licence tiers for tools bindi may touch.
+#
+# tier = "deployable"      -> licence permits use in a pipeline handed to a lab.
+# tier = "evaluation_only" -> commercial or licence-restricted; evaluation/benchmark use only,
+#                             never a dependency in any deployable path.
+#
+# New tools are added by editing THIS FILE, not core code. `citation` is the licence
+# or terms URL so a reader can verify the tier.
+schema = "bindi.tool_tiers.v1"
+
+[tools.BindCraft2]
+tier = "deployable"
+licence = "MIT"
+citation = "https://github.com/PacesaLab/BindCraft2/blob/main/LICENSE"
+
+[tools."FEP+"]
+tier = "evaluation_only"
+licence = "Schrodinger commercial (proprietary)"
+citation = "https://www.schrodinger.com/licensing"
+
+[tools.PyRosetta]
+tier = "evaluation_only"
+licence = "Rosetta/PyRosetta licence (free for academics, commercial requires paid licence)"
+citation = "https://www.pyrosetta.org/home/licensing-pyrosetta"
+
+[tools.PBEE]
+tier = "evaluation_only"
+licence = "Depends on PyRosetta (licence-restricted)"
+citation = "https://github.com/chavesejf/pbee"

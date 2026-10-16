@@ -1,0 +1,18 @@
+# How bindi's relative ranking has been checked against MEASURED relative affinities.
+#
+# Discipline borrowed from Schrodinger's protein-FEP benchmark (Sampson et al.,
+# J Mol Biol 436, 168640, 2024, doi:10.1016/j.jmb.2024.168640;
+# data: https://github.com/schrodinger/protein-fep-benchmark): a method is judged on a
+# fixed system set with a PUBLISHED error, not on assertion.
+#
+# bindi has no such wet-lab benchmark yet. The honest status is "unchecked".
+# NEVER fabricate a correlation: leave measured systems empty and status unchecked
+# until real paired (ranking, measured relative affinity) data exists. When it does,
+# add systems here and record the metric honestly.
+schema = "bindi.benchmark.v1"
+status = "unchecked"
+metric = "none"          # e.g. "spearman" once measured data exists
+value = "unchecked"      # never a fabricated number
+n_systems = 0
+basis = "Sampson et al., J Mol Biol 436, 168640, 2024, doi:10.1016/j.jmb.2024.168640"
+systems = []

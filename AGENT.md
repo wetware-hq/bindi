@@ -67,7 +67,7 @@ Translate the user query into a **`bindi.policy.v1`** document:
 
 - **`query`** — one-sentence design intent (audit trail for humans).
 - **`bindcraft`** — BindCraft2 campaign fields: `target`, `modality`, `number_of_final_designs`, `project_folder`, plus any BC2-specific options (hotspots, chains, filters).
-- **`curation`** — `rank_on` (metric column names, default `["i_pDAE"]`), `top_n` (shortlist size).
+- **`curation`** — `rank_on` (metric column names, default `["i_pDAE"]`), `top_n` (shortlist size), optional `universes` (scorer columns for the multiverse ensemble; defaults to the higher-better metrics present when at least two exist).
 - **`gallery`** — relative directory name for curated output (default `gallery`).
 
 Starter from natural language (always **review and edit** before a production GPU run):
@@ -126,10 +126,13 @@ On success, treat **`gallery/`** (or the path in `policy.gallery`) as the primar
 
 ```text
 gallery/
-  index.json      # bindi.gallery.v1 manifest: entries, scores, structure paths
+  index.json      # bindi.gallery.v1 manifest: entries, scores, structure paths,
+                  #   plus claim, provenance, ensemble, benchmark, tooling (see below)
   ranked.csv      # tabular shortlist (BindCraft2 columns + rank)
   structures/     # mmCIF copies when found under the campaign folder
 ```
+
+**Manifest fields to surface:** the output is a **relative ranking within this campaign only** (`claim`) — never an absolute affinity or kcal/mol number, and never a safety claim. `provenance` marks every design an in-silico hypothesis until confirmed experimentally. `ensemble` records the multiverse self-consistency: the `universes` used, the `disagreement_summary`, and a `triage` list of contested designs to confirm in the wet lab first (per-design `mean_rank`/`worst_rank`/`worst_universe`/`spread`/`disagreement` sit beside each entry's `rank`). `benchmark` is a cited record whose honest status is `unchecked` — no correlation is fabricated. `tooling` lists the deployable-path tools, checked against `src/bindi/data/tool_tiers.toml`; `evaluation_only` tools (FEP+, PyRosetta, PBEE) must never be a dependency in a lab-facing path.
 
 Read `index.json` for programmatic handoff. Summarize for the user:
 
@@ -193,4 +196,4 @@ Before marking the task done:
 
 ## License note
 
-Bindi is MIT. BindCraft2 is a separate dependency with its own license; comply with both when deploying workers.
+Bindi is MIT. BindCraft2 is a separate dependency with its own license; comply with both when deploying workers. Tool licence tiers live in `src/bindi/data/tool_tiers.toml`: tools marked `evaluation_only` (e.g. FEP+, PyRosetta, PBEE) are commercial or licence-restricted and may be used for evaluation only, never as a dependency in a deployable path. Add new tools by editing that data file.

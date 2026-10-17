@@ -72,3 +72,22 @@ docker run --gpus all -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.js
 ## License
 
 **bindi 🐨** is released under the MIT license. [BindCraft2](https://github.com/PacesaLab/BindCraft2) is a separate dependency with its own license terms.
+
+## References
+
+Each entry is tied to the one claim in this README that rests on it; nothing is listed for adjacency. Peer-reviewed primary literature first, then sources at a different weight (preprints and tool repositories), then the claims that have no peer-reviewed support yet. An entry with no DOI, PMID or arXiv id is not a citation and does not belong here.
+
+### Peer-reviewed
+
+- **Pacesa, M. et al.** One-shot design of functional protein binders with BindCraft. *Nature* 646, 483–492 (2025). DOI: 10.1038/s41586-025-09429-6 (PMID: 40866699). — The design step: **bindi 🐨** orchestrates [BindCraft2](https://github.com/PacesaLab/BindCraft2) to generate de novo binders, and `rank` being a *whether-it-binds* pass signal rather than potency restates BindCraft's own interface metric.
+- **Sampson, J. M. et al.** Robust prediction of relative binding energies for protein–protein complex mutations using free energy perturbation calculations. *J. Mol. Biol.* 436, 168640 (2024). DOI: 10.1016/j.jmb.2024.168640 (PMID: 38844044). — The relative-ranking-only claim: relative binding free energies between close mutants are predictable where single-structure absolute affinity is not, so bindi emits an ordering and never a kcal/mol value.
+- **Liu, H. et al.** PPB-Affinity: Protein–Protein Binding Affinity dataset for AI-based protein drug discovery. *Scientific Data* (2024). DOI: 10.1038/s41597-024-03997-4. — The `benchmark` field: the *measured* relative affinities that `src/bindi/data/benchmark.toml` is to be checked against come from a dataset of this kind; the record's honest `status` is `unchecked` until that check runs.
+- **Keskin, D. B. et al.** Neoantigen vaccine generates intratumoral T cell responses in phase Ib glioblastoma trial. *Nature* 565, 234–239 (2019). DOI: 10.1038/s41586-018-0792-9 (PMID: 30568305). — The disclosure that a gallery's candidate order can be "from the published trial, not computed here": the phase Ib glioblastoma neoantigen trial is that published source.
+
+### Preprints and tool repositories (not peer-reviewed)
+
+- **AbBiBench** (Antibody Binding Benchmarking). arXiv:2506.04235 (2025). — Cited for **benchmark design only**: treating the antibody–antigen complex as the scored unit informs how the multiverse scorer-ensemble would be evaluated. It is not evidence that the ensemble works, which is why the ensemble ships off by default.
+
+### Unsupported claims (no peer-reviewed support)
+
+- The multiverse scorer-ensemble correlation against a held-out, training-set-filtered measured-affinity set is **unrun**; the `benchmark` record reads **`unchecked`** and no correlation number is ever reported.

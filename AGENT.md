@@ -67,7 +67,7 @@ Translate the user query into a **`bindi.policy.v1`** document:
 
 - **`query`** — one-sentence design intent (audit trail for humans).
 - **`bindcraft`** — BindCraft2 campaign fields: `target`, `modality`, `number_of_final_designs`, `project_folder`, plus any BC2-specific options (hotspots, chains, filters).
-- **`curation`** — `rank_on` (metric column names, default `["i_pDAE"]`), `top_n` (shortlist size), optional `universes` (scorer columns for the multiverse ensemble; defaults to the higher-better metrics present when at least two exist).
+- **`curation`** — `rank_on` (metric column names, default `["i_pDAE"]`), `top_n` (shortlist size). The multiverse ensemble is **off by default**; enable it with `ensemble: true` (and optional `universes` scorer columns, defaulting to the higher-better metrics present when at least two exist).
 - **`gallery`** — relative directory name for curated output (default `gallery`).
 
 Starter from natural language (always **review and edit** before a production GPU run):
@@ -132,7 +132,9 @@ gallery/
   structures/     # mmCIF copies when found under the campaign folder
 ```
 
-**Manifest fields to surface:** the output is a **relative ranking within this campaign only** (`claim`) — never an absolute affinity or kcal/mol number, and never a safety claim. `provenance` marks every design an in-silico hypothesis until confirmed experimentally. `ensemble` records the multiverse self-consistency: the `universes` used, the `disagreement_summary`, and a `triage` list of contested designs to confirm in the wet lab first (per-design `mean_rank`/`worst_rank`/`worst_universe`/`spread`/`disagreement` sit beside each entry's `rank`). `benchmark` is a cited record whose honest status is `unchecked` — no correlation is fabricated. `tooling` lists the deployable-path tools, checked against `src/bindi/data/tool_tiers.toml`; `evaluation_only` tools (FEP+, PyRosetta, PBEE) must never be a dependency in a lab-facing path.
+**Manifest fields to surface:** the output is a **relative ranking within this campaign only** (`claim`) — never an absolute affinity or kcal/mol number, and never a safety claim. `rank` is a **pass signal, not potency** (`rank_meaning`): BindCraft's metric predicts whether a design binds, not how tightly. The design step is **reproducible given a seed, not deterministic** (`reproducibility`: `seed`, `trajectories`). Every gallery carries five fixed `disclosures` (testing only / order from the published trial, not computed here / prediction present but unverified / identity and sign-off gates specified but unbuilt / no hazard screen applied), and is marked `release: false` with a `not_a_release` reason. `provenance` marks every design an in-silico hypothesis until confirmed experimentally. `benchmark` is a cited record whose honest status is `unchecked` — no correlation is fabricated. `tooling` lists the deployable-path tools, checked against `src/bindi/data/tool_tiers.toml`; `evaluation_only` tools (FEP+, PyRosetta, PBEE) must never be a dependency in a lab-facing path.
+
+**The multiverse ensemble is OFF by default** and unvalidated: by default nothing about it is written to the manifest and it does not reorder designs. Enable it only deliberately via `curation.ensemble: true` or `use_ensemble=True`; it then adds the `ensemble` block (`universes`, `disagreement_summary`, `triage`, per-design stats) and `provenance.ensemble_basis`.
 
 Read `index.json` for programmatic handoff. Summarize for the user:
 

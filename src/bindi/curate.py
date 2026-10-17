@@ -35,6 +35,28 @@ ENSEMBLE_BASIS = (
     "(data: https://github.com/schrodinger/protein-fep-benchmark)."
 )
 
+# The rank column is a pass-signal ordering, not potency. BindCraft's authors state their
+# interface metric predicts whether a design binds, not how tightly it binds.
+RANK_MEANING = (
+    "Rank is a pass-signal ordering (BindCraft's interface metric predicts whether a design "
+    "binds, not how tightly), not an affinity or potency ordering."
+)
+
+# Five disclosure lines required on every gallery manifest (clinical-leads ruling).
+DISCLOSURES = [
+    "For testing only, not for use with real patients.",
+    "Candidate order is from the published trial, not computed here.",
+    "The prediction step is present but unverified.",
+    "Identity and sign-off gates are specified but unbuilt.",
+    "No hazard screen has been applied to this output.",
+]
+
+# This artefact is never a release: no hazard screen has been applied.
+NOT_A_RELEASE_REASON = (
+    "No hazard screen has been applied to this output, so the release condition has not "
+    "been met."
+)
+
 
 def _read_csv(path: Path) -> list[dict[str, str]]:
     with path.open(encoding="utf-8", newline="") as handle:
@@ -144,6 +166,19 @@ def _disagreement_summary(summary: dict[str, dict[str, Any]]) -> dict[str, Any] 
     }
 
 
+def _reproducibility(bindcraft: dict[str, Any]) -> dict[str, Any]:
+    """Reproducible-given-seed, never 'deterministic': record seed and trajectory count
+    where the campaign provides them."""
+    trajectories = bindcraft.get("number_of_trajectories")
+    if trajectories is None:
+        trajectories = bindcraft.get("trajectories")
+    return {
+        "model": "reproducible-given-seed",
+        "seed": bindcraft.get("seed"),
+        "trajectories": trajectories,
+    }
+
+
 def curate(
     policy: dict[str, Any],
     *,
@@ -151,6 +186,7 @@ def curate(
     workdir: Path | None = None,
     use_bindcraft_rank: bool = False,
     bindcraft_cmd: str = "bindcraft",
+    use_ensemble: bool = False,
 ) -> dict[str, Any]:
     policy = normalize_policy(policy)
     base = workdir or Path.cwd()
@@ -158,6 +194,10 @@ def curate(
     curation = policy.get("curation") or {}
     rank_on = list(curation.get("rank_on") or ["i_pDAE"])
     top_n = int(curation.get("top_n") or bindcraft.get("number_of_final_designs") or 10)
+
+    # Ensemble is OFF by default: it ships as code but is unvalidated, so it writes nothing
+    # to the manifest and does not reorder unless explicitly enabled.
+    ensemble_enabled = bool(use_ensemble or curation.get("ensemble") is True)
 
     # Deployable-path licence guard: nothing evaluation_only may be a dependency here.
     data.assert_deployable(DEPLOYABLE_TOOLS)
@@ -176,26 +216,37 @@ def curate(
     else:
         rows = sorted(rows, key=lambda row: int(row.get("rank") or 999999))
 
-    # Multiverse ensemble: order by consensus across universes when at least two exist.
-    universes = _select_universes(rows, curation)
+    # Multiverse ensemble (only when explicitly enabled): order by consensus across universes.
     ensemble_summary: dict[str, dict[str, Any]] = {}
-    ensemble_available = len(universes) >= 2
-    fallback: str | None = None
-    if ensemble_available:
-        try:
-            ensemble_summary = ensemble.summarise(rows, universes)
-            rows = ensemble.order(rows, universes)
-            for index, row in enumerate(rows, start=1):
-                row["rank"] = str(index)
-        except ensemble.NotComparable as exc:
-            ensemble_available = False
-            ensemble_summary = {}
-            fallback = f"ensemble not comparable ({exc}); fell back to rank_on={rank_on}"
-    if not ensemble_available and fallback is None:
-        fallback = (
-            f"fewer than two higher-better universes present ({universes or 'none'}); "
-            f"fell back to rank_on={rank_on}"
-        )
+    ensemble_block: dict[str, Any] | None = None
+    if ensemble_enabled:
+        universes = _select_universes(rows, curation)
+        ensemble_available = len(universes) >= 2
+        fallback: str | None = None
+        if ensemble_available:
+            try:
+                ensemble_summary = ensemble.summarise(rows, universes)
+                rows = ensemble.order(rows, universes)
+                for index, row in enumerate(rows, start=1):
+                    row["rank"] = str(index)
+            except ensemble.NotComparable as exc:
+                ensemble_available = False
+                ensemble_summary = {}
+                fallback = f"ensemble not comparable ({exc}); fell back to rank_on={rank_on}"
+        if not ensemble_available and fallback is None:
+            fallback = (
+                f"fewer than two higher-better universes present ({universes or 'none'}); "
+                f"fell back to rank_on={rank_on}"
+            )
+        ensemble_block = {
+            "method": "scorer_ensemble (multiverse heuristic)",
+            "available": ensemble_available,
+            "universes": universes if ensemble_available else [],
+            "fallback": fallback,
+            "basis": ENSEMBLE_BASIS,
+            "disagreement_summary": _disagreement_summary(ensemble_summary),
+            "triage": ensemble.triage(ensemble_summary) if ensemble_summary else [],
+        }
 
     selected = rows[:top_n]
     gallery_path.mkdir(parents=True, exist_ok=True)
@@ -223,7 +274,7 @@ def curate(
             "sequence": row.get("Binder_Sequence"),
             "structure": structure_rel,
         }
-        summary = ensemble_summary.get(design)
+        summary = ensemble_summary.get(design) if ensemble_enabled else None
         if summary is not None:
             entry["ensemble"] = {
                 "mean_rank": summary["mean_rank"],
@@ -235,31 +286,32 @@ def curate(
             }
         entries.append(entry)
 
+    provenance = {
+        "status": "in_silico_hypothesis",
+        "statement": PROVENANCE_STATEMENT,
+    }
+    if ensemble_enabled:
+        provenance["ensemble_basis"] = ENSEMBLE_BASIS
+
     manifest = {
         "schema": GALLERY_SCHEMA,
         "campaign": str(campaign_root),
         "source_table": str(ranked_csv),
         "rank_on": rank_on,
+        "rank_meaning": RANK_MEANING,
         "top_n": top_n,
         "claim": RELATIVE_CLAIM,
-        "provenance": {
-            "status": "in_silico_hypothesis",
-            "statement": PROVENANCE_STATEMENT,
-            "ensemble_basis": ENSEMBLE_BASIS,
-        },
-        "ensemble": {
-            "method": "scorer_ensemble (multiverse heuristic)",
-            "available": ensemble_available,
-            "universes": universes if ensemble_available else [],
-            "fallback": fallback,
-            "basis": ENSEMBLE_BASIS,
-            "disagreement_summary": _disagreement_summary(ensemble_summary),
-            "triage": ensemble.triage(ensemble_summary) if ensemble_summary else [],
-        },
+        "disclosures": list(DISCLOSURES),
+        "release": False,
+        "not_a_release": NOT_A_RELEASE_REASON,
+        "reproducibility": _reproducibility(bindcraft),
+        "provenance": provenance,
         "benchmark": data.benchmark_record(),
         "tooling": {"path": "deployable", "tools": list(DEPLOYABLE_TOOLS)},
         "entries": entries,
     }
+    if ensemble_block is not None:
+        manifest["ensemble"] = ensemble_block
     (gallery_path / "index.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
     if selected:
         _write_csv(gallery_path / "ranked.csv", selected, selected[0].keys())

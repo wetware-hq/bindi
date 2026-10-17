@@ -15,6 +15,7 @@ def run(
     workdir: Path | None = None,
     dry_run: bool = False,
     use_bindcraft_rank: bool = False,
+    use_ensemble: bool = False,
 ) -> dict[str, Any]:
     generation = generate(policy, workdir=workdir, dry_run=dry_run)
     curation = curate(
@@ -22,5 +23,6 @@ def run(
         project_folder=generation["project_folder"],
         workdir=workdir,
         use_bindcraft_rank=use_bindcraft_rank and not dry_run,
+        use_ensemble=use_ensemble,
     )
     return {"generate": generation, "curate": curation}

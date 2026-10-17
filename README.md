@@ -31,17 +31,26 @@ Each gallery follows `bindi.gallery.v1` and contains `index.json` (manifest, ran
 
 ### Relative ranking only
 
-bindi emits a **relative ranking among the designs in one campaign** and never a predicted absolute affinity or kcal/mol value. This follows the protein-FEP benchmark of Sampson et al. (*J Mol Biol* 436, 168640, 2024; [data](https://github.com/schrodinger/protein-fep-benchmark)): relative binding energies between close mutants are predictable where single-structure absolute affinity is not. The manifest carries this as an explicit `claim` field, and a test fails if any manifest or score key reads like an absolute affinity. **Ranking is never a safety claim.**
+bindi emits a **relative ranking among the designs in one campaign** and never a predicted absolute affinity or kcal/mol value. This follows the protein-FEP benchmark of Sampson et al. (*J Mol Biol* 436, 168640, 2024; [data](https://github.com/schrodinger/protein-fep-benchmark)): relative binding free energies between close mutants are predictable where single-structure absolute affinity is not. The manifest carries this as an explicit `claim` field, and a test fails if any manifest or score key reads like an absolute affinity. **Ranking is never a safety claim.**
+
+The `rank` column is a **pass signal, not potency.** BindCraft's authors state their interface metric predicts *whether* a design binds, not *how tightly*, so the ordering says which designs are more likely to bind, not which binds hardest. The manifest records this in `rank_meaning`.
+
+The design step is **reproducible given a seed, not deterministic.** The manifest `reproducibility` field records the `seed` and trajectory count where the campaign provides them.
 
 ### Manifest fields
 
 The `index.json` manifest adds, beyond the ranked `entries`:
 
 - **`claim`** — the relative-only statement above.
-- **`provenance`** — `status` (`in_silico_hypothesis`), a plain statement that these are hypotheses until confirmed experimentally (affinity, specificity, developability, safety; for therapeutics, the regulatory path), and the cited `ensemble_basis`.
-- **`ensemble`** — the multiverse self-consistency record: whether the ensemble was `available`, the `universes` (scorers) used, the `disagreement_summary` distribution, a `triage` list of the designs the scorers argue over most (send these for wet-lab confirmation first), and a `fallback` note when fewer than two universes exist. Each entry also gets per-design `mean_rank`, `worst_rank`, `worst_universe`, `spread`, `disagreement` and `by_universe`.
+- **`disclosures`** — five fixed lines that must appear on every gallery: for testing only (not real patients); candidate order is from the published trial, not computed here; the prediction step is present but unverified; identity and sign-off gates are specified but unbuilt; no hazard screen has been applied. A test fails if any of the five is missing.
+- **`release` / `not_a_release`** — `release` is always `false`; `not_a_release` states that no hazard screen has been applied, so the release condition has not been met.
+- **`rank_meaning`** — records that `rank` is a pass-signal ordering, not affinity or potency.
+- **`reproducibility`** — `model` is `reproducible-given-seed` (never "deterministic"), with `seed` and `trajectories` where the campaign provides them.
+- **`provenance`** — `status` (`in_silico_hypothesis`) and a plain statement that these are hypotheses until confirmed experimentally (affinity, specificity, developability, safety; for therapeutics, the regulatory path).
 - **`benchmark`** — a cited, data-file-driven record (`src/bindi/data/benchmark.toml`) of how the ranking has been checked against *measured* relative affinities. The honest current `status` is **`unchecked`**; no correlation number is ever fabricated.
 - **`tooling`** — the deployable-path tools used, each verified `deployable` against the licence tiers.
+
+**Ensemble is off by default.** The multiverse scorer-ensemble ships as code (`src/bindi/ensemble.py`) but is unvalidated (benchmark status `unchecked`), so by default `curate()` writes **no** `ensemble` field — neither a top-level block nor any per-entry key — and does not reorder by it. Enable it explicitly with `curation.ensemble = true` in the policy or `curate(..., use_ensemble=True)`; only then does the `ensemble` block (and its per-design `mean_rank`/`worst_rank`/`worst_universe`/`spread`/`disagreement`/`by_universe`, plus `provenance.ensemble_basis`) appear.
 
 ### Licence tiers
 

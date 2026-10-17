@@ -127,13 +127,19 @@ def test_default_run_emits_no_ensemble_field_anywhere(tmp_path):
     assert "ensemble" not in list(_all_keys(m))
 
 
-def test_default_run_does_not_reorder_by_ensemble(tmp_path):
-    # Without ensemble, pre-ranked table order (by i_pDAE) is preserved: contested_a first.
+def test_default_run_suppresses_rank_on_unconfirmed_metric(tmp_path):
+    # Default rank_on is i_pDAE, whose direction is not confirmed, so the default (ensemble-off)
+    # gallery is shown unordered with the rank suppressed rather than ordered worst-first.
     m = _gallery(tmp_path, top_n=3)
+    assert m.get("rank_suppressed") is True
+    assert m.get("ordering") == "unordered"
+    assert all("rank" not in e for e in m["entries"])
+    # It must NOT present the worst-by-i_pTM candidate (contested_a) as the top/first "best".
+    # Neutral (design-id) order carries no quality claim.
     assert [e["design"] for e in m["entries"]] == [
         "pdl1_contested_a",
-        "pdl1_steady_b",
         "pdl1_contested_c",
+        "pdl1_steady_b",
     ]
 
 
@@ -189,7 +195,10 @@ def test_five_disclosures_release_and_claim(tmp_path):
 # --- Ruling C: WORDING ---------------------------------------------------------
 
 def test_rank_labelled_as_pass_signal_not_potency(tmp_path):
-    m = _gallery(tmp_path)
+    # When a rank IS shown (ranking on a confirmed-direction metric), it must be labelled a
+    # pass-signal ordering, not potency.
+    m = _gallery(tmp_path, curation={"rank_on": ["i_pTM"]})
+    assert m.get("rank_suppressed") is not True
     meaning = m.get("rank_meaning", "").lower()
     assert "pass" in meaning and "signal" in meaning
     assert "not an affinity" in meaning or "not a potency" in meaning or "not affinity" in meaning

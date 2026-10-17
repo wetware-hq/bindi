@@ -42,6 +42,44 @@ RANK_MEANING = (
     "binds, not how tightly), not an affinity or potency ordering."
 )
 
+# ---- Ranking direction registry -------------------------------------------------
+# A metric may order the gallery only when its direction is CONFIRMED against the
+# upstream source. BindCraft/AlphaFold2 confidence scores are higher-better; the
+# interface aligned-error metric is `i_pAE`, normalised to 0-1 and LOWER-better
+# (default accept filter Average_i_pAE < 0.35; Pacesa et al. 2025,
+# doi:10.1038/s41586-025-09429-6).
+HIGHER_BETTER_CONFIRMED = {"i_pTM", "pTM", "pLDDT", "Interface_BuriedArea", "Interface_Residues"}
+LOWER_BETTER_CONFIRMED = {"i_pAE", "pAE"}
+
+# `i_pDAE` has NO confirmed direction. It is not a BindCraft output column (that is
+# `i_pAE`), bindi computes it nowhere, and bindi's own text calls it an "interface
+# confidence metric" (higher-better) while the name reads as an aligned error
+# (lower-better). Name and usage conflict and there is no upstream anchor, so the
+# direction cannot be confirmed. A gallery ranking requested on an unconfirmed metric
+# does NOT guess a sign: candidates are shown unordered with the rank column suppressed
+# (Physician's ruling), so a mislabel is surfaced rather than hidden by a sign flip.
+UNCONFIRMED_DIRECTION = {"i_pDAE"}
+
+RANK_SUPPRESSED_MEANING = (
+    "Rank suppressed: the requested ranking metric has no confirmed direction, so "
+    "candidates are shown unordered. Imposing an order would assert a direction the "
+    "code cannot justify."
+)
+
+
+def _direction(metric: str) -> int | None:
+    """-1 if higher-better, +1 if lower-better (ascending sort), None if unconfirmed."""
+    if metric in HIGHER_BETTER_CONFIRMED:
+        return -1
+    if metric in LOWER_BETTER_CONFIRMED:
+        return 1
+    return None
+
+
+def _unconfirmed_metrics(rank_on: list[str]) -> list[str]:
+    """Metrics asked to order the gallery whose direction is not confirmed."""
+    return [m for m in rank_on if _direction(m) is None]
+
 # Five disclosure lines required on every gallery manifest (clinical-leads ruling).
 DISCLOSURES = [
     "For testing only, not for use with real patients.",
@@ -90,7 +128,6 @@ def _rank_rows(
     if not rows:
         return rows
     higher_better = higher_better or {}
-    default_higher = {"i_pDAE", "i_pTM", "pTM", "Interface_BuriedArea", "Interface_Residues"}
 
     def sort_key(row: dict[str, str]) -> tuple:
         keys: list[Any] = []
@@ -99,8 +136,16 @@ def _rank_rows(
             if value is None:
                 keys.append((1, 0.0))
                 continue
-            higher = higher_better.get(metric, metric in default_higher)
-            keys.append((0, -value if higher else value))
+            if metric in higher_better:
+                sign = -1 if higher_better[metric] else 1
+            else:
+                direction = _direction(metric)
+                if direction is None:
+                    # No confirmed direction: never order on it (would be a guess).
+                    keys.append((0, 0.0))
+                    continue
+                sign = direction
+            keys.append((0, sign * value))
         return tuple(keys)
 
     ordered = sorted(rows, key=sort_key)
@@ -193,11 +238,16 @@ def curate(
     bindcraft, gallery_path = resolve_bindcraft_campaign(policy, workdir=base)
     curation = policy.get("curation") or {}
     rank_on = list(curation.get("rank_on") or ["i_pDAE"])
+    unconfirmed = _unconfirmed_metrics(rank_on)
     top_n = int(curation.get("top_n") or bindcraft.get("number_of_final_designs") or 10)
 
     # Ensemble is OFF by default: it ships as code but is unvalidated, so it writes nothing
     # to the manifest and does not reorder unless explicitly enabled.
     ensemble_enabled = bool(use_ensemble or curation.get("ensemble") is True)
+    # The gallery is shown unordered with rank suppressed when ranking is requested on a
+    # metric with no confirmed direction (default i_pDAE), unless the opt-in, unvalidated
+    # ensemble is explicitly enabled (which ranks by cross-universe consensus instead).
+    rank_suppressed = bool(unconfirmed) and not ensemble_enabled
 
     # Deployable-path licence guard: nothing evaluation_only may be a dependency here.
     data.assert_deployable(DEPLOYABLE_TOOLS)
@@ -211,7 +261,14 @@ def curate(
         raise FileNotFoundError(f"no ranked table under {campaign_root}")
 
     rows = _read_csv(ranked_csv)
-    if "rank" not in (rows[0].keys() if rows else {}):
+    if rank_suppressed:
+        # Physician's ruling for an unconfirmed direction: show candidates unordered
+        # with the rank column suppressed. Drop any upstream rank and present in a
+        # neutral (design-id) order that implies no quality ranking.
+        for row in rows:
+            row.pop("rank", None)
+        rows = sorted(rows, key=lambda row: (row.get("design") or row.get("Design") or ""))
+    elif "rank" not in (rows[0].keys() if rows else {}):
         rows = _rank_rows(rows, rank_on)
     else:
         rows = sorted(rows, key=lambda row: int(row.get("rank") or 999999))
@@ -269,11 +326,12 @@ def curate(
             copied.append(str(dest))
         entry: dict[str, Any] = {
             "design": design,
-            "rank": int(row.get("rank") or 0),
             "scores": score,
             "sequence": row.get("Binder_Sequence"),
             "structure": structure_rel,
         }
+        if not rank_suppressed:
+            entry["rank"] = int(row.get("rank") or 0)
         summary = ensemble_summary.get(design) if ensemble_enabled else None
         if summary is not None:
             entry["ensemble"] = {
@@ -310,6 +368,17 @@ def curate(
         "tooling": {"path": "deployable", "tools": list(DEPLOYABLE_TOOLS)},
         "entries": entries,
     }
+    if rank_suppressed:
+        manifest["rank_meaning"] = RANK_SUPPRESSED_MEANING
+        manifest["rank_suppressed"] = True
+        manifest["ordering"] = "unordered"
+        manifest["rank_suppressed_reason"] = (
+            "Ranking requested on " + ", ".join(unconfirmed) + ", whose direction is "
+            "unconfirmed (name reads as interface aligned error, lower-better; bindi's own "
+            "text and fixtures treat it as a higher-better confidence metric; and it is not a "
+            "BindCraft output column, the upstream interface aligned-error column being i_pAE). "
+            "Candidates are shown unordered rather than ranked on a direction the code cannot justify."
+        )
     if ensemble_block is not None:
         manifest["ensemble"] = ensemble_block
     (gallery_path / "index.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")

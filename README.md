@@ -56,6 +56,10 @@ The `index.json` manifest adds, beyond the ranked `entries`:
 
 `src/bindi/data/tool_tiers.toml` tags each tool `deployable` or `evaluation_only` with a licence name and citation URL. Commercial or licence-restricted tools (FEP+, PyRosetta, PBEE) are `evaluation_only` and must never be a dependency in a path handed to a lab; curation asserts this. New tools are added by editing the data file, not core code.
 
+## Bar
+
+`pip install -e .` then `pytest` (43 tests) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
+
 ## Deployment
 
 Install from source with `pip install -e .` or `uv pip install -e .`, then run `bindi run campaigns/pdl1.json`, or build and run the container:

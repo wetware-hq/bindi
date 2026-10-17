@@ -189,7 +189,7 @@ gallery_path = outcome["curate"]["gallery"]
 
 ## Verification checklist
 
-Before marking the task done:
+Before marking the task done ([BAR.md](BAR.md) records what a green covers and what it does not):
 
 - [ ] `campaign` validates as `bindi.policy.v1` (or normalizes from bare BC2 JSON).
 - [ ] `bindi run ... --dry-run` succeeds in CI-like environments, or GPU `bindi run` completed on the worker.

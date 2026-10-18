@@ -18,8 +18,14 @@
   "neoantigen": {
     "gene": "SYNTHGENE1",
     "variant": "p.G12D",
-    "mutant_peptide": "YLDPETGDW",
-    "wild_type_peptide": "YLGPETGDW",
+    "mutant_peptide": {
+      "sequence": "YLDPETGDW",
+      "provenance": {"kind": "reference", "source": "invented neoantigen (synthetic case fixture)"}
+    },
+    "wild_type_peptide": {
+      "sequence": "YLGPETGDW",
+      "provenance": {"kind": "reference", "source": "invented wild-type counterpart (synthetic case fixture)"}
+    },
     "mutated_position": 3,
     "source": "invented"
   },

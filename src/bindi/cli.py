@@ -72,6 +72,9 @@ def main(argv: list[str] | None = None) -> int:
         help="Request a real design run. Refused while the hold is in force (exit 2).",
     )
     e2e.add_argument("--human-reference-fasta", help="Reference FASTA for the human-reference gate")
+    e2e.add_argument("--human-reference-source", help="Version/source label for the human reference")
+    e2e.add_argument("--hazard-screen-fasta", help="Reference FASTA for the hazard screen gate")
+    e2e.add_argument("--hazard-screen-source", help="Version/source label for the hazard screen")
     e2e.add_argument("--margin-scorer", help="module:function scorer for the wild-type margin")
 
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
@@ -114,6 +117,9 @@ def main(argv: list[str] | None = None) -> int:
                 trace_path=args.trace,
                 allow_design=args.design,
                 reference_fasta=args.human_reference_fasta,
+                reference_source=args.human_reference_source,
+                hazard_fasta=args.hazard_screen_fasta,
+                hazard_source=args.hazard_screen_source,
                 margin_scorer_spec=args.margin_scorer,
             )
         except DesignHold as exc:

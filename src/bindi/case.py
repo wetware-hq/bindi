@@ -24,6 +24,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .provenance import sequence_text, validate_sequence_field
+
 CASE_SCHEMA = "bindi.immunology_case.v1"
 SCHEMA_FILE = Path(__file__).resolve().parents[2] / "schemas" / "immunology_case.v1.schema.json"
 
@@ -111,18 +113,30 @@ def validate_case(case: Any) -> list[str]:
                 problems.append(f"neoantigen.{field} is required")
         mutant = neo.get("mutant_peptide")
         wild = neo.get("wild_type_peptide")
+        mutant_seq = None
+        wild_seq = None
         for name, value in (("mutant_peptide", mutant), ("wild_type_peptide", wild)):
-            if not isinstance(value, str) or not AA_RE.match(value):
+            problems.extend(
+                validate_sequence_field(value, path=f"neoantigen.{name}")
+                if value is not None
+                else [f"neoantigen.{name} is required"]
+            )
+            seq = sequence_text(value)
+            if seq and not AA_RE.match(seq):
                 problems.append(
-                    f"neoantigen.{name} must be 8-15 one-letter residues, found {value!r}"
+                    f"neoantigen.{name}.sequence must be 8-15 one-letter residues, found {seq!r}"
                 )
-        if isinstance(mutant, str) and isinstance(wild, str) and AA_RE.match(mutant) and AA_RE.match(wild):
-            if mutant == wild:
+            if name == "mutant_peptide":
+                mutant_seq = seq
+            else:
+                wild_seq = seq
+        if mutant_seq and wild_seq and AA_RE.match(mutant_seq) and AA_RE.match(wild_seq):
+            if mutant_seq == wild_seq:
                 problems.append(
                     "neoantigen.mutant_peptide equals wild_type_peptide: there is nothing to "
                     "design against and no margin could be stated"
                 )
-            elif len(mutant) != len(wild):
+            elif len(mutant_seq) != len(wild_seq):
                 problems.append(
                     "neoantigen.mutant_peptide and wild_type_peptide differ in length; the "
                     "wild-type counterpart must be the same peptide without the variant"

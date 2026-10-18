@@ -56,9 +56,35 @@ The `index.json` manifest adds, beyond the ranked `entries`:
 
 `src/bindi/data/tool_tiers.toml` tags each tool `deployable` or `evaluation_only` with a licence name and citation URL. Commercial or licence-restricted tools (FEP+, PyRosetta, PBEE) are `evaluation_only` and must never be a dependency in a path handed to a lab; curation asserts this. New tools are added by editing the data file, not core code.
 
+## Clinical case seam (end-to-end immunology case)
+
+The design target used to be a literal string in the campaign policy (`bindcraft.target`, e.g. `hPDL1`). `src/bindi/case.py` adds one source of truth above that literal: a **synthetic clinical-immunology case record** written by the clinical half, carrying the HLA type, the mutant peptide and its wild-type counterpart. The policy literal stays as the fixture fallback, so every existing campaign behaves exactly as before.
+
+```bash
+bindi case-run fixtures/immunology_case_PLACEHOLDER.json --workdir /tmp/case1
+```
+
+One command, one JSONL trace, one case: `case record -> target extraction -> binder step -> wild-type margin hook -> human-reference gate -> ward hand-off -> summary`. The record schema is `schemas/immunology_case.v1.schema.json`; the case is chosen by `--case`/`case-run`'s positional argument, `policy.case`, or `BINDI_CASE_FILE`, in that order.
+
+**What is real:** the record is read and validated (required fields, enums, `SYNTH-` ids, peptide and HLA patterns), the target is extracted from it, the fixture-backed binder step and gallery curation run, and every stage is traced with a status and an exit code.
+
+**What is a placeholder, and says so in its own trace line:**
+
+| Stage | Status today | Why |
+|---|---|---|
+| `design` | `fixture_backed` | No BindCraft, no Modal, no GPU. The ranked table is `fixtures/sample_ranked.csv`; the sequences are invented and unrelated to the case peptide. |
+| `margin_wild_type` | `not_computed` | No structural scorer is wired and no design run has happened. Inject one (`--margin-scorer module:function`) and the margin against the wild-type complex is stated per design. |
+| `human_reference_gate` | `unbuilt` | bindi ships no human reference proteome. Supplied one (`--human-reference-fasta`), it runs an **exact k-mer containment screen** — not an alignment, not a validated homology search. It never returns `pass` without looking. |
+| `ward_handoff` | `not_invoked` | The hand-off record is written to `ward_handoff.json`, but ward runs fifteen fixed scenarios and exposes no entry point for an arbitrary case, so **the ward gates and the letter did not run**. |
+| `letter` | `not_produced` | Letters come from ward's letters endware, which this run does not reach. |
+
+**The design hold is enforced in code.** A real design run needs three things, and `case.design_hold_reasons` names each one that is missing: a case record signed by the clinical half, a `pass` from the human-reference gate, and a stated wild-type margin. `bindi case-run --design` on an unsigned record refuses and exits `2` without calling BindCraft; `generate(..., dry_run=False)` on a policy naming a case record raises `DesignHold`. `fixtures/immunology_case_PLACEHOLDER.json` is an engineering placeholder written to exercise the seam — it is **not** a signed patient, and a test fails if any case fixture in this repo claims to be signed.
+
+Exit codes: `0` fixture-backed run completed, `1` case record invalid, `2` design refused by the hold, `3` a gate returned `fail`.
+
 ## Bar
 
-`pip install -e .` then `pytest` (43 tests) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
+`pip install -e .` then `pytest` (85 tests) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
 
 ## Deployment
 

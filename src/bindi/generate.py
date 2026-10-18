@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from .case import assert_design_allowed, case_path_from, resolve_target
 from .policy import resolve_bindcraft_campaign
 
 RANKED_REL = Path("3_Ranked") / "!_Ranked.csv"
@@ -42,6 +43,13 @@ def generate(
             "project_folder": str(campaign_dir),
             "gallery": str(gallery_path),
         }
+
+    # The seam's hold: when the campaign names a patient case record, a real design run
+    # only starts if that record is signed, consents to design use, and the Scientist's two
+    # conditions (human-reference gate pass, stated wild-type margin) are satisfied. Nothing
+    # here loosens for a fixture target; a fixture campaign keeps its previous behaviour.
+    if case_path_from(policy) is not None:
+        assert_design_allowed(resolve_target(policy))
 
     cmd = [bindcraft_executable(), "design", str(campaign_file)]
     if extra_args:

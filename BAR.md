@@ -8,7 +8,7 @@ What a green means in **bindi 🐨**, and what it does not. A green here is not 
 
 ```bash
 pip install -e .     # or: uv pip install -e .
-pytest               # 43 tests
+pytest               # 85 tests
 bindi run campaigns/pdl1.json --dry-run   # curation smoke-test on fixtures, no GPU
 ```
 
@@ -25,6 +25,8 @@ bindi run campaigns/pdl1.json --dry-run   # curation smoke-test on fixtures, no 
 - **Provenance** (`test_provenance_present`) — every design is marked an in-silico hypothesis until confirmed experimentally.
 - **Ensemble off by default** (`test_default_run_emits_no_ensemble_field_anywhere`, `test_default_run_does_not_reorder_by_ensemble`, `test_enabled_path_emits_full_ensemble`, `test_enabled_via_policy_flag`, `test_enabled_path_reorders_by_consensus`) — by default no `ensemble` field is written and no reorder happens; enabling it explicitly restores the full block, and both paths are tested.
 - **Ensemble internals** (`tests/test_ensemble.py`) — ranking, disagreement summary, triage, and not-comparable handling (fewer than two universes, missing/blank/non-numeric metric).
+- **Clinical case seam** (`tests/test_case_seam.py`) — a case record validates against the documented fields (required fields, enums, `SYNTH-` ids, peptide and HLA patterns, mutant ≠ wild-type, same length, restriction allele present in `class_i`); the target is extracted from the record; the fixture fallback is intact; the three hold conditions (signed record, human-reference `pass`, stated margin) are enforced in code, including a `DesignHold` from `generate(dry_run=False)` before BindCraft is called; and one `case-run` writes one JSONL trace whose ten stages carry their honest statuses.
+
 - **Policy & pipeline** (`test_bare_bindcraft_json_normalizes`, `test_resolve_paths`, `test_dry_run_pipeline_builds_gallery`, `test_curate_existing_campaign`) — bare BindCraft2 JSON normalizes, paths resolve, and the dry-run and re-curate paths build a `bindi.gallery.v1` gallery.
 
 ## What a green does NOT cover
@@ -33,6 +35,8 @@ bindi run campaigns/pdl1.json --dry-run   # curation smoke-test on fixtures, no 
 - **Binding, structural, or experimental validity.** `rank` is a pass signal from BindCraft's interface metric, not measured affinity or potency. A gallery is a hypothesis until confirmed in the lab.
 - **No hazard screen** has been applied to any gallery; `release` is always `false` and `not_a_release` names the unmet condition.
 - **Identity and sign-off gates are specified but unbuilt.** The disclosure lines say so; a green does not mean they exist.
+- **The end-to-end immunology case.** `case-run` is fixture-backed: `design` is `fixture_backed`, `margin_wild_type` is `not_computed`, `human_reference_gate` is `unbuilt`, and `ward_handoff`/`letter` are `not_invoked`/`not_produced`. A green says those statuses were reported honestly, not that any of those steps happened.
+- **The human-reference gate.** When a reference FASTA is supplied the gate is exact k-mer containment only: no alignment, no substitution matrix, no E-value, no immunogenicity assessment. A `pass` does not mean a design is not cross-reactive.
 - **Not a release.** The gallery manifest is marked `not_a_release`; a green is a code check on invented fixtures, not evidence of clinical safety.
 
 ## Name guard

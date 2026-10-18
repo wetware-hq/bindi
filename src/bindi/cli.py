@@ -8,7 +8,9 @@ import sys
 from pathlib import Path
 
 from . import VERSION
+from .case import CaseError, DesignHold
 from .curate import curate
+from .e2e import EXIT_CASE_ERROR, EXIT_HOLD, case_run
 from .generate import generate
 from .policy import load_policy, policy_from_nl_stub
 from .resource import resource_descriptor
@@ -56,6 +58,22 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--dry-run", action="store_true")
     full.add_argument("--bindcraft-rank", action="store_true")
 
+    e2e = sub.add_parser(
+        "case-run",
+        help="Run one synthetic immunology case end to end and write a single JSONL trace",
+    )
+    e2e.add_argument("case", help="Patient case record JSON (bindi.immunology_case.v1)")
+    e2e.add_argument("--policy", help="Campaign policy JSON (optional; target comes from the case)")
+    e2e.add_argument("--workdir", type=Path, default=Path.cwd())
+    e2e.add_argument("--trace", type=Path, help="Trace path (default <workdir>/case_trace.jsonl)")
+    e2e.add_argument(
+        "--design",
+        action="store_true",
+        help="Request a real design run. Refused while the hold is in force (exit 2).",
+    )
+    e2e.add_argument("--human-reference-fasta", help="Reference FASTA for the human-reference gate")
+    e2e.add_argument("--margin-scorer", help="module:function scorer for the wild-type margin")
+
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
 
     stub = sub.add_parser("stub", help="Build a starter policy from a one-line query")
@@ -85,6 +103,30 @@ def main(argv: list[str] | None = None) -> int:
         json.dump(document, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return 0
+
+    if command == "case-run":
+        policy = _load(args.policy) if args.policy else None
+        try:
+            result = case_run(
+                args.case,
+                policy=policy,
+                workdir=args.workdir,
+                trace_path=args.trace,
+                allow_design=args.design,
+                reference_fasta=args.human_reference_fasta,
+                margin_scorer_spec=args.margin_scorer,
+            )
+        except DesignHold as exc:
+            json.dump({"error": "design_hold", "detail": str(exc)}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT_HOLD
+        except CaseError as exc:
+            json.dump({"error": "case_error", "detail": str(exc)}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT_CASE_ERROR
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return int(result["exit_code"])
 
     policy_path = getattr(args, "policy", None)
     if policy_path is None and command != "recruit":

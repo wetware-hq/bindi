@@ -1,0 +1,17 @@
+{
+  "schema": "bindi.policy.v1",
+  "query": "Miniprotein binders against a synthetic patient's mutant peptide-MHC complex, personalised from that patient's case record.",
+  "case": "fixtures/immunology_case_PLACEHOLDER.json",
+  "_swap": "To run the real case, point `case` at the Physician's signed synthetic immunology patient. That is the whole change: no code edit. The hold still refuses the design run until the human-reference gate passes and a wild-type margin is stated.",
+  "bindcraft": {
+    "modality": "binder",
+    "campaign_name": "SYNTH-IMM-001",
+    "number_of_final_designs": 3,
+    "project_folder": "results/SYNTH-IMM-001"
+  },
+  "curation": {
+    "rank_on": ["i_pDAE"],
+    "top_n": 3
+  },
+  "gallery": "gallery/SYNTH-IMM-001"
+}

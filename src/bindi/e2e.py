@@ -122,6 +122,7 @@ def _letter_payload(
         ),
         "target_mutant": target.get("mutant_peptide"),
         "target_wild_type": target.get("wild_type_peptide"),
+<<<<<<< HEAD
         "hazard_screen": {
             "method": hazard_gate.get("method", gates.HAZARD_SCREEN_METHOD)
             if hazard_gate
@@ -134,6 +135,8 @@ def _letter_payload(
                 "Homology-based hazard screen with known limits; a pass is not a safety claim."
             ),
         },
+=======
+>>>>>>> origin/cursor/sequence-design-engine-2844
         **(
             {"evidence_level": design_engine.EVIDENCE_LEVEL}
             if sequence_design
@@ -441,11 +444,15 @@ def case_run(
             note="Hand-off record written after both output gates passed.",
         )
         letter = _letter_payload(
+<<<<<<< HEAD
             case,
             target,
             designs,
             hazard_gate=hazard_gate,
             sequence_design=sequence_design,
+=======
+            case, target, designs, sequence_design=sequence_design
+>>>>>>> origin/cursor/sequence-design-engine-2844
         )
         letter_path.write_text(json.dumps(letter, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         trace.emit(

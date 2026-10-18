@@ -25,6 +25,10 @@
           "type": "string",
           "description": "Design tool name when kind is design_tool (e.g. bindcraft)."
         },
+        "version": {
+          "type": "string",
+          "description": "Design tool version when kind is design_tool."
+        },
         "scoring_function": {
           "type": "string",
           "description": "Named scoring function from the design tool when kind is design_tool."
@@ -37,7 +41,7 @@
       "allOf": [
         {
           "if": {"properties": {"kind": {"const": "design_tool"}}, "required": ["kind"]},
-          "then": {"required": ["tool", "scoring_function"]}
+          "then": {"required": ["tool", "version", "scoring_function"]}
         }
       ]
     },
@@ -45,7 +49,12 @@
     "wild_type_complex_score": {"type": "string", "description": "Pass-signal score; design_tool provenance only."},
     "margin": {"type": "string", "description": "Stated margin; design_tool provenance only."},
     "binding": {"type": "string"},
-    "affinity": {"type": "string"}
+    "affinity": {"type": "string"},
+    "evidence_level": {
+      "type": "string",
+      "enum": ["sequence_level_not_structure_validated"],
+      "description": "Explicit label that binding or margin claims are sequence-level only, not structure-validated."
+    }
   },
   "allOf": [
     {

@@ -1,7 +1,6 @@
 """Human-reference gate, hazard screen, run verdict, and sequence provenance."""
 
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -15,6 +14,16 @@ ROOT = Path(__file__).resolve().parents[1]
 PLACEHOLDER = ROOT / "fixtures" / "immunology_case_PLACEHOLDER.json"
 HUMAN_REF_HIT = ROOT / "fixtures" / "human_reference_synthetic.fasta"
 HAZARD_REF = ROOT / "fixtures" / "hazard_screen_synthetic.fasta"
+
+# Global BLAST identity ~57% but contains an 8-residue exact human stretch (window rule fires).
+WINDOW_ONLY_BINDER = (
+    "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
+    "AKQRQISF"
+    "YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
+)
+WINDOW_ONLY_HUMAN_REF = (
+    "MKTAYIAKQRQISFVKSHFSRQLEERLGLIEVQAPILSRVGDGTQDNLSGAEKAVQVKVKALPDAQFEVVHSLAKWKRQTLGQHDFSAGEGLYTHMKALRPDEDRLSPLGGFVESFTVQ"
+)
 
 
 def _clean_human_ref(tmp_path: Path) -> Path:
@@ -104,9 +113,39 @@ def test_human_reference_gate_refuses_on_hit(tmp_path):
     )
     assert hit["status"] == "refuse"
     row = hit["per_sequence"][0]
-    tools = {row["mmseqs2"]["tool"] if row.get("mmseqs2") else None, row["blastp"]["tool"] if row.get("blastp") else None}
-    assert "mmseqs2" in tools or "blastp" in tools
+    assert row["global_identity"]["verdict"] == "refuse"
     assert hit["reference_sha256"]
+
+
+def test_human_reference_gate_refuses_on_local_window_below_global_threshold(tmp_path):
+    reference = tmp_path / "ref.fasta"
+    reference.write_text(f">human\n{WINDOW_ONLY_HUMAN_REF}\n", encoding="utf-8")
+    record = gates.human_reference_gate(
+        [{"design": "chimera", "sequence": WINDOW_ONLY_BINDER}],
+        reference_fasta=reference,
+        reference_source="window-test",
+    )
+    assert record["status"] == "refuse"
+    row = record["per_sequence"][0]
+    assert row["global_identity"]["verdict"] == "pass"
+    assert row["local_window"]["verdict"] == "refuse"
+    assert row["refuse_rule"] == "local_window"
+    assert row["local_window"]["best_window"]["query_start"]
+    assert row["local_window"]["best_window"]["query_end"]
+
+
+def test_human_reference_gate_passes_clean_under_global_and_window(tmp_path):
+    reference = tmp_path / "ref.fasta"
+    reference.write_text(">synthetic\nMKTAYIAKQRQISFVKSHFSRQ\n", encoding="utf-8")
+    clean = gates.human_reference_gate(
+        [{"design": "d1", "sequence": "WWWWWWWWWWWW"}],
+        reference_fasta=reference,
+        reference_source="test-ref",
+    )
+    assert clean["status"] == "pass"
+    row = clean["per_sequence"][0]
+    assert row["global_identity"]["verdict"] == "pass"
+    assert row["local_window"]["verdict"] == "pass"
 
 
 def test_human_reference_gate_passes_clean_sequence(tmp_path):

@@ -24,14 +24,37 @@ MMSEQS_ENV = "BINDI_MMSEQS_CMD"
 BLASTP_ENV = "BINDI_BLASTP_CMD"
 MAKEBLASTDB_ENV = "BINDI_MAKEBLASTDB_CMD"
 
-# Identity (percent, 0–100) at or above which a human-reference hit refuses output.
-# Short binders at or above this identity to a human protein are cross-reactivity risk.
+# Global identity (percent, 0–100) at or above which a human-reference hit refuses output.
+# Pending chief scientist sign-off: treats the whole reported alignment as one unit.
 HUMAN_REFERENCE_HIT_IDENTITY_PERCENT = 70
 
-# Hazard motifs use full-length identity: only exact or near-exact matches refuse.
+# Local window length (residues). Pending chief scientist sign-off: class-I peptide length;
+# catches self-epitope-sized stretches that global percent identity can miss.
+HUMAN_REFERENCE_WINDOW_LENGTH = 8
+
+# Identity (percent, 0–100) required within every window of WINDOW_LENGTH.
+# Pending chief scientist sign-off: high local identity on a self-sized window is refused.
+HUMAN_REFERENCE_WINDOW_IDENTITY_PERCENT = 90
+
+# MMseqs2 prefilter sensitivity so weak-global / strong-local hits are still reported.
+# Pending chief scientist sign-off: must stay below the window rule to avoid silent misses.
+HUMAN_REFERENCE_SEARCH_MIN_SEQ_ID_PERCENT = 30
+
+# Hazard motifs: full-alignment identity at or near exact match.
 HAZARD_SCREEN_HIT_IDENTITY_PERCENT = 100
 
+# Pending chief scientist sign-off: shortest hazardous motif span to treat like an epitope.
+HAZARD_SCREEN_WINDOW_LENGTH = 8
+
+# Pending chief scientist sign-off: identity within that span for hazard refusal.
+HAZARD_SCREEN_WINDOW_IDENTITY_PERCENT = 100
+
 DEFAULT_REFERENCE_SOURCE = "unconfigured"
+
+MMSEQS_ALIGN_FORMAT = (
+    "query,target,pident,qstart,qend,tstart,tend,qaln,taln"
+)
+BLAST_ALIGN_FORMAT = "6 qseqid sseqid pident qstart qend sstart send qseq sseq"
 
 
 def _sha256_file(path: Path) -> str:
@@ -75,47 +98,6 @@ def _write_query_fasta(
     return queries
 
 
-def _parse_mmseqs_m8(text: str) -> dict[str, dict[str, str]]:
-    best: dict[str, dict[str, str]] = {}
-    for line in text.splitlines():
-        if not line.strip():
-            continue
-        parts = line.split("\t")
-        if len(parts) < 3:
-            continue
-        qid, target_id, pident = parts[0], parts[1], parts[2]
-        entry = {
-            "tool": "mmseqs2",
-            "target_id": target_id,
-            "identity_percent": _format_percent(pident),
-        }
-        prev = best.get(qid)
-        if prev is None or int(entry["identity_percent"]) > int(prev["identity_percent"]):
-            best[qid] = entry
-    return best
-
-
-def _parse_blast_tsv(text: str) -> dict[str, dict[str, str]]:
-    best: dict[str, dict[str, str]] = {}
-    for line in text.splitlines():
-        if not line.strip():
-            continue
-        parts = line.split("\t")
-        if len(parts) < 4:
-            continue
-        qid, target_id, pident, evalue = parts[0], parts[1], parts[2], parts[3]
-        entry = {
-            "tool": "blastp",
-            "target_id": target_id,
-            "identity_percent": _format_percent(pident),
-            "evalue": str(evalue),
-        }
-        prev = best.get(qid)
-        if prev is None or int(entry["identity_percent"]) > int(prev["identity_percent"]):
-            best[qid] = entry
-    return best
-
-
 def _format_percent(raw: str) -> str:
     try:
         value = float(raw)
@@ -126,10 +108,166 @@ def _format_percent(raw: str) -> str:
     return str(int(round(value)))
 
 
-def _hit_above_threshold(hit: dict[str, str] | None, threshold_percent: int) -> bool:
+def _best_window_in_alignment(
+    qaln: str,
+    taln: str,
+    *,
+    window_length: int,
+) -> dict[str, str] | None:
+    """Best identity in any query window from tool-reported local alignment strings."""
+    if not qaln or not taln or len(qaln) != len(taln):
+        return None
+    matches: list[int] = []
+    query_index = 0
+    for qc, tc in zip(qaln, taln):
+        if qc == "-":
+            continue
+        query_index += 1
+        matches.append(1 if qc == tc else 0)
+    if len(matches) < window_length:
+        return None
+    best_identity = -1
+    best_start = 0
+    for start in range(0, len(matches) - window_length + 1):
+        window = matches[start : start + window_length]
+        identity = int(round(100 * sum(window) / window_length))
+        if identity > best_identity:
+            best_identity = identity
+            best_start = start
+    return {
+        "identity_percent": str(best_identity),
+        "query_start": str(best_start + 1),
+        "query_end": str(best_start + window_length),
+        "window_length": str(window_length),
+    }
+
+
+def _window_from_hit(
+    hit: dict[str, str] | None,
+    *,
+    window_length: int,
+) -> dict[str, str] | None:
     if not hit:
-        return False
-    return int(hit["identity_percent"]) >= threshold_percent
+        return None
+    qaln = hit.get("qaln") or ""
+    taln = hit.get("taln") or hit.get("sseq") or ""
+    if qaln and taln:
+        window = _best_window_in_alignment(qaln, taln, window_length=window_length)
+        if window:
+            window = dict(window)
+            window["tool"] = hit["tool"]
+            window["target_id"] = hit.get("target_id", "")
+            return window
+    return None
+
+
+def _parse_mmseqs_alignments(text: str) -> dict[str, list[dict[str, str]]]:
+    by_query: dict[str, list[dict[str, str]]] = {}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) < 9:
+            continue
+        qid, target_id, pident = parts[0], parts[1], parts[2]
+        qstart, qend, tstart, tend = parts[3], parts[4], parts[5], parts[6]
+        qaln, taln = parts[7], parts[8]
+        entry = {
+            "tool": "mmseqs2",
+            "target_id": target_id,
+            "identity_percent": _format_percent(pident),
+            "qstart": qstart,
+            "qend": qend,
+            "tstart": tstart,
+            "tend": tend,
+            "qaln": qaln,
+            "taln": taln,
+        }
+        by_query.setdefault(qid, []).append(entry)
+    return by_query
+
+
+def _parse_blast_alignments(text: str) -> dict[str, list[dict[str, str]]]:
+    by_query: dict[str, list[dict[str, str]]] = {}
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) < 9:
+            continue
+        qid, target_id, pident = parts[0], parts[1], parts[2]
+        qstart, qend, sstart, send = parts[3], parts[4], parts[5], parts[6]
+        qseq, sseq = parts[7], parts[8]
+        entry = {
+            "tool": "blastp",
+            "target_id": target_id,
+            "identity_percent": _format_percent(pident),
+            "qstart": qstart,
+            "qend": qend,
+            "tstart": sstart,
+            "tend": send,
+            "qaln": qseq,
+            "taln": sseq,
+        }
+        by_query.setdefault(qid, []).append(entry)
+    return by_query
+
+
+def _best_global_hit(hits: list[dict[str, str]] | None) -> dict[str, str] | None:
+    if not hits:
+        return None
+    return max(hits, key=lambda h: int(h["identity_percent"]))
+
+
+def _global_verdict(
+    mm: dict[str, str] | None,
+    bl: dict[str, str] | None,
+    *,
+    threshold_percent: int,
+) -> dict[str, Any]:
+    mm_refuse = mm is not None and int(mm["identity_percent"]) >= threshold_percent
+    bl_refuse = bl is not None and int(bl["identity_percent"]) >= threshold_percent
+    verdict = "refuse" if (mm_refuse or bl_refuse) else "pass"
+    return {
+        "verdict": verdict,
+        "threshold_identity_percent": threshold_percent,
+        "mmseqs2": mm,
+        "blastp": bl,
+    }
+
+
+def _window_verdict(
+    mm: dict[str, str] | None,
+    bl: dict[str, str] | None,
+    *,
+    window_length: int,
+    window_identity_percent: int,
+) -> dict[str, Any]:
+    mm_window = _window_from_hit(mm, window_length=window_length)
+    bl_window = _window_from_hit(bl, window_length=window_length)
+    windows = [w for w in (mm_window, bl_window) if w]
+    best = (
+        max(windows, key=lambda w: int(w["identity_percent"]))
+        if windows
+        else None
+    )
+    mm_refuse = (
+        mm_window is not None
+        and int(mm_window["identity_percent"]) >= window_identity_percent
+    )
+    bl_refuse = (
+        bl_window is not None
+        and int(bl_window["identity_percent"]) >= window_identity_percent
+    )
+    verdict = "refuse" if (mm_refuse or bl_refuse) else "pass"
+    return {
+        "verdict": verdict,
+        "window_length": window_length,
+        "window_identity_percent_threshold": window_identity_percent,
+        "mmseqs2": mm_window,
+        "blastp": bl_window,
+        "best_window": best,
+    }
 
 
 def _run_mmseqs(
@@ -137,8 +275,8 @@ def _run_mmseqs(
     query_fasta: Path,
     work: Path,
     *,
-    threshold_percent: int,
-) -> tuple[dict[str, dict[str, str]], str | None]:
+    search_min_seq_id_percent: int,
+) -> tuple[dict[str, list[dict[str, str]]], str | None]:
     mmseqs = _tool_path(MMSEQS_ENV, "mmseqs")
     if not shutil.which(mmseqs):
         return {}, f"mmseqs2 binary not found ({mmseqs})"
@@ -148,7 +286,7 @@ def _run_mmseqs(
     tmp = work / "mmseqs_tmp"
     tmp.mkdir(parents=True, exist_ok=True)
     m8 = work / "mmseqs.m8"
-    min_seq_id = str(threshold_percent / 100.0)
+    min_seq_id = str(search_min_seq_id_percent / 100.0)
     for args in (
         [mmseqs, "createdb", str(reference), str(ref_db)],
         [mmseqs, "createdb", str(query_fasta), str(query_db)],
@@ -161,6 +299,7 @@ def _run_mmseqs(
             str(tmp),
             "--min-seq-id",
             min_seq_id,
+            "-a",
         ],
         [
             mmseqs,
@@ -170,19 +309,19 @@ def _run_mmseqs(
             str(result_db),
             str(m8),
             "--format-output",
-            "query,target,pident",
+            MMSEQS_ALIGN_FORMAT,
         ],
     ):
         proc = subprocess.run(args, capture_output=True, text=True)
         if proc.returncode != 0:
             detail = (proc.stderr or proc.stdout or "").strip()
             return {}, f"mmseqs2 failed ({' '.join(args[:3])}): {detail or proc.returncode}"
-    return _parse_mmseqs_m8(m8.read_text(encoding="utf-8") if m8.exists() else ""), None
+    return _parse_mmseqs_alignments(m8.read_text(encoding="utf-8") if m8.exists() else ""), None
 
 
 def _run_blast(
     reference: Path, query_fasta: Path, work: Path
-) -> tuple[dict[str, dict[str, str]], str | None]:
+) -> tuple[dict[str, list[dict[str, str]]], str | None]:
     blastp = _tool_path(BLASTP_ENV, "blastp")
     makeblastdb = _tool_path(MAKEBLASTDB_ENV, "makeblastdb")
     if not shutil.which(blastp):
@@ -206,9 +345,9 @@ def _run_blast(
             "-db",
             str(db_prefix),
             "-outfmt",
-            "6 qseqid sseqid pident evalue",
+            BLAST_ALIGN_FORMAT,
             "-max_target_seqs",
-            "1",
+            "5",
         ],
         capture_output=True,
         text=True,
@@ -216,7 +355,7 @@ def _run_blast(
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()
         return {}, f"blastp failed: {detail or proc.returncode}"
-    return _parse_blast_tsv(proc.stdout), None
+    return _parse_blast_alignments(proc.stdout), None
 
 
 def _provenance_for_query(
@@ -239,30 +378,57 @@ def _provenance_for_query(
     return fixture_sequence(sequence, source="binder output screened by gate")
 
 
-def _merge_best_hits(
+def _merge_rules(
     queries: list[dict[str, str]],
-    mmseqs_hits: dict[str, dict[str, str]],
-    blast_hits: dict[str, dict[str, str]],
+    mmseqs_hits: dict[str, list[dict[str, str]]],
+    blast_hits: dict[str, list[dict[str, str]]],
     *,
-    threshold_percent: int,
+    global_threshold_percent: int,
+    window_length: int,
+    window_identity_percent: int,
 ) -> list[dict[str, Any]]:
     per_sequence: list[dict[str, Any]] = []
     for meta in queries:
         qid = meta["query_id"]
-        mm = mmseqs_hits.get(qid)
-        bl = blast_hits.get(qid)
-        hits = [h for h in (mm, bl) if h]
-        best = max(hits, key=lambda h: int(h["identity_percent"])) if hits else None
+        mm = _best_global_hit(mmseqs_hits.get(qid))
+        bl = _best_global_hit(blast_hits.get(qid))
+        global_rule = _global_verdict(mm, bl, threshold_percent=global_threshold_percent)
+        window_rule = _window_verdict(
+            mm,
+            bl,
+            window_length=window_length,
+            window_identity_percent=window_identity_percent,
+        )
+        refuse = global_rule["verdict"] == "refuse" or window_rule["verdict"] == "refuse"
+        refuse_rule = None
+        refuse_detail = None
+        if global_rule["verdict"] == "refuse":
+            refuse_rule = "global_identity"
+            refuse_detail = (
+                f"global identity at or above {global_threshold_percent}% "
+                f"(mmseqs2={mm['identity_percent'] if mm else 'none'}, "
+                f"blastp={bl['identity_percent'] if bl else 'none'})"
+            )
+        elif window_rule["verdict"] == "refuse":
+            refuse_rule = "local_window"
+            best = window_rule.get("best_window") or {}
+            refuse_detail = (
+                f"local window {window_length} residues at "
+                f"{best.get('identity_percent', '?')}% identity on query "
+                f"{best.get('query_start', '?')}-{best.get('query_end', '?')} "
+                f"via {best.get('tool', '?')}"
+            )
         per_sequence.append(
             {
                 "query_id": qid,
                 "sequence": meta.get("sequence"),
                 "role": meta.get("role"),
                 "design": meta.get("design"),
-                "mmseqs2": mm,
-                "blastp": bl,
-                "best_hit": best,
-                "refuse": any(_hit_above_threshold(h, threshold_percent) for h in (mm, bl)),
+                "global_identity": global_rule,
+                "local_window": window_rule,
+                "refuse": refuse,
+                "refuse_rule": refuse_rule,
+                "refuse_detail": refuse_detail,
             }
         )
     return per_sequence
@@ -289,14 +455,19 @@ def _homology_gate(
     reference_env: str,
     reference_source: str | None,
     reference_source_env: str,
-    threshold_percent: int,
+    global_threshold_percent: int,
+    window_length: int,
+    window_identity_percent: int,
+    search_min_seq_id_percent: int,
     tmp_prefix: str,
 ) -> dict[str, Any]:
     designs = designs or []
     record: dict[str, Any] = {
         "gate": gate_name,
         "tool": "mmseqs2+blastp",
-        "threshold_identity_percent": threshold_percent,
+        "threshold_identity_percent": global_threshold_percent,
+        "window_length": window_length,
+        "window_identity_percent_threshold": window_identity_percent,
         "reference_path": None,
         "reference_version": None,
         "reference_sha256": None,
@@ -335,7 +506,10 @@ def _homology_gate(
             return record
 
         mmseqs_hits, mm_err = _run_mmseqs(
-            path, query_fasta, work, threshold_percent=threshold_percent
+            path,
+            query_fasta,
+            work,
+            search_min_seq_id_percent=search_min_seq_id_percent,
         )
         if mm_err:
             record["status"] = "refuse"
@@ -350,11 +524,13 @@ def _homology_gate(
             return record
 
         per_sequence = _with_provenance(
-            _merge_best_hits(
+            _merge_rules(
                 queries_meta,
                 mmseqs_hits,
                 blast_hits,
-                threshold_percent=threshold_percent,
+                global_threshold_percent=global_threshold_percent,
+                window_length=window_length,
+                window_identity_percent=window_identity_percent,
             ),
             target=target,
         )
@@ -364,10 +540,12 @@ def _homology_gate(
     if refusing:
         record["status"] = "refuse"
         record["verdict"] = "refuse"
-        record["reason"] = (
-            f"hit at or above {threshold_percent}% identity: "
-            + ", ".join(row["query_id"] for row in refusing)
-        )
+        reasons = []
+        for row in refusing:
+            rule = row.get("refuse_rule") or "unknown"
+            detail = row.get("refuse_detail") or row["query_id"]
+            reasons.append(f"{row['query_id']} ({rule}: {detail})")
+        record["reason"] = "; ".join(reasons)
         return record
 
     record["status"] = "pass"
@@ -390,7 +568,10 @@ def human_reference_gate(
         reference_env=REFERENCE_ENV,
         reference_source=reference_source,
         reference_source_env=REFERENCE_SOURCE_ENV,
-        threshold_percent=HUMAN_REFERENCE_HIT_IDENTITY_PERCENT,
+        global_threshold_percent=HUMAN_REFERENCE_HIT_IDENTITY_PERCENT,
+        window_length=HUMAN_REFERENCE_WINDOW_LENGTH,
+        window_identity_percent=HUMAN_REFERENCE_WINDOW_IDENTITY_PERCENT,
+        search_min_seq_id_percent=HUMAN_REFERENCE_SEARCH_MIN_SEQ_ID_PERCENT,
         tmp_prefix="bindi-human-ref-",
     )
 
@@ -410,6 +591,9 @@ def hazard_screen_gate(
         reference_env=HAZARD_ENV,
         reference_source=hazard_source,
         reference_source_env=HAZARD_SOURCE_ENV,
-        threshold_percent=HAZARD_SCREEN_HIT_IDENTITY_PERCENT,
+        global_threshold_percent=HAZARD_SCREEN_HIT_IDENTITY_PERCENT,
+        window_length=HAZARD_SCREEN_WINDOW_LENGTH,
+        window_identity_percent=HAZARD_SCREEN_WINDOW_IDENTITY_PERCENT,
+        search_min_seq_id_percent=HAZARD_SCREEN_WINDOW_IDENTITY_PERCENT,
         tmp_prefix="bindi-hazard-",
     )

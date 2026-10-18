@@ -89,6 +89,12 @@ def main(argv: list[str] | None = None) -> int:
         default=42,
         help="RNG seed for --sequence-design (default 42).",
     )
+    e2e.add_argument(
+        "--design-scorer",
+        default=design_engine.DEFAULT_SCORER_ID,
+        choices=sorted(design_engine.SCORER_REGISTRY),
+        help="Sequence design scorer id (default blosum_position_v2).",
+    )
 
     noise = sub.add_parser(
         "sequence-design-repeat-noise",
@@ -111,9 +117,15 @@ def main(argv: list[str] | None = None) -> int:
         help="First RNG seed for repeat runs (default 1000).",
     )
     noise.add_argument(
+        "--scorer",
+        default=design_engine.DEFAULT_SCORER_ID,
+        choices=sorted(design_engine.SCORER_REGISTRY),
+        help="Scorer id for repeat-noise measurement (default blosum_position_v2).",
+    )
+    noise.add_argument(
         "--output",
         type=Path,
-        help="Evidence JSON path (default evidence/sequence_design_repeat_noise.v1.json).",
+        help="Evidence JSON path (default depends on --scorer).",
     )
 
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
@@ -134,12 +146,13 @@ def main(argv: list[str] | None = None) -> int:
         case = load_case(args.case)
         if not case.get("signature", {}).get("signed"):
             raise SystemExit("case record must be signed for repeat-noise measurement")
-        output = args.output or Path("evidence/sequence_design_repeat_noise.v1.json")
+        output = args.output or design_engine.default_evidence_path(args.scorer)
         report = design_engine.write_repeat_noise_evidence(
             case,
             output,
             repeats=args.repeats,
             seed_start=args.seed_start,
+            scorer_id=args.scorer,
         )
         json.dump(report, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
@@ -177,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
                 margin_scorer_spec=args.margin_scorer,
                 sequence_design=args.sequence_design,
                 design_seed=args.design_seed,
+                design_scorer_id=args.design_scorer,
             )
         except DesignHold as exc:
             json.dump({"error": "design_hold", "detail": str(exc)}, sys.stdout, indent=2)

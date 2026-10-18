@@ -122,7 +122,6 @@ def _letter_payload(
         ),
         "target_mutant": target.get("mutant_peptide"),
         "target_wild_type": target.get("wild_type_peptide"),
-<<<<<<< HEAD
         "hazard_screen": {
             "method": hazard_gate.get("method", gates.HAZARD_SCREEN_METHOD)
             if hazard_gate
@@ -135,8 +134,6 @@ def _letter_payload(
                 "Homology-based hazard screen with known limits; a pass is not a safety claim."
             ),
         },
-=======
->>>>>>> origin/cursor/sequence-design-engine-2844
         **(
             {"evidence_level": design_engine.EVIDENCE_LEVEL}
             if sequence_design
@@ -194,6 +191,7 @@ def case_run(
     margin_scorer_spec: str | None = None,
     sequence_design: bool = False,
     design_seed: int = 42,
+    design_scorer_id: str | None = None,
 ) -> dict[str, Any]:
     """Run one synthetic immunology case end to end. Returns {"exit_code", "trace", ...}."""
     base = Path(workdir or Path.cwd())
@@ -318,7 +316,11 @@ def case_run(
     run_policy.setdefault("gallery", f"gallery/{case['case_id']}")
 
     sequence_design_rows: list[dict[str, Any]] | None = None
+    sequence_scorer_meta: dict[str, Any] | None = None
     if sequence_design:
+        scorer_id, score_fn, sequence_scorer_meta = design_engine.resolve_scorer(
+            design_scorer_id
+        )
         bindcraft.setdefault("number_of_final_designs", 3)
         project_folder = Path(bindcraft["project_folder"])
         project_folder.mkdir(parents=True, exist_ok=True)
@@ -326,11 +328,13 @@ def case_run(
             mutant_peptide,
             seed=design_seed,
             final_count=int(bindcraft.get("number_of_final_designs") or 3),
+            scorer_id=scorer_id,
         )
         design_engine.attach_wild_type_margins(
             sequence_design_rows,
             mutant_peptide=mutant_peptide,
             wild_type_peptide=wild_peptide,
+            scorer_id=scorer_id,
         )
         ranked_path = project_folder / "3_Ranked" / "!_Ranked.csv"
         design_engine.write_ranked_table(ranked_path, sequence_design_rows)
@@ -346,13 +350,15 @@ def case_run(
             designs_are_real=True,
             design_tool=design_engine.TOOL_NAME,
             design_tool_version=design_engine.TOOL_VERSION,
-            scoring_function=design_engine.SCORING_FUNCTION,
+            scorer_id=scorer_id,
+            scorer_version=sequence_scorer_meta["version"],
+            scoring_function=sequence_scorer_meta["scoring_function"],
             evidence_level=design_engine.EVIDENCE_LEVEL,
             seed=design_seed,
             hold_reasons=hold_reasons,
             note=(
-                "Sequence-level designer v1: stochastic mutational search scored by "
-                "bindi.design_engine.score_binder_peptide. Not structure-validated."
+                "Sequence-level designer: stochastic mutational search with explicit scorer "
+                f"{scorer_id!r}. Not structure-validated."
             ),
         )
         run_policy["curation"] = dict(run_policy.get("curation") or {})
@@ -393,17 +399,17 @@ def case_run(
         note=curate_note,
     )
 
-    margin_scorer = (
-        design_engine.score_binder_peptide if sequence_design else None
-    )
+    margin_scorer = score_fn if sequence_design else None
     margin_record = margin.score_wild_type_margin(
         target,
         designs,
         scorer=margin_scorer,
         scorer_spec=margin_scorer_spec if not sequence_design else None,
     )
-    if sequence_design:
+    if sequence_design and sequence_scorer_meta:
         margin_record["evidence_level"] = design_engine.EVIDENCE_LEVEL
+        margin_record["scorer_id"] = scorer_id
+        margin_record["scorer_version"] = sequence_scorer_meta["version"]
     trace.emit(
         "margin_wild_type",
         margin_record["status"],
@@ -444,15 +450,11 @@ def case_run(
             note="Hand-off record written after both output gates passed.",
         )
         letter = _letter_payload(
-<<<<<<< HEAD
             case,
             target,
             designs,
             hazard_gate=hazard_gate,
             sequence_design=sequence_design,
-=======
-            case, target, designs, sequence_design=sequence_design
->>>>>>> origin/cursor/sequence-design-engine-2844
         )
         letter_path.write_text(json.dumps(letter, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         trace.emit(

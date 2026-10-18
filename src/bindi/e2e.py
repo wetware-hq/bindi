@@ -19,7 +19,8 @@ from . import case as case_mod
 from . import gates, margin
 from .curate import curate
 from .generate import generate
-from .provenance import fixture_sequence
+from . import design_engine
+from .provenance import fixture_sequence, sequence_text
 from .resource import VERSION
 from .trace_validate import validate_trace_record
 from .verdict import evaluate_run_verdict
@@ -86,7 +87,15 @@ def _designs_from_gallery(gallery_dir: Path) -> list[dict[str, Any]]:
     ]
 
 
-def _shown_sequences_from_designs(designs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _shown_sequences_from_designs(
+    designs: list[dict[str, Any]], *, sequence_design: bool = False
+) -> list[dict[str, Any]]:
+    if sequence_design:
+        return [
+            design["sequence_field"]
+            for design in designs
+            if design.get("sequence_field")
+        ]
     return [
         fixture_sequence(
             str(design["sequence"]),
@@ -103,11 +112,14 @@ def _letter_payload(
     designs: list[dict[str, Any]],
     *,
     hazard_gate: dict[str, Any] | None = None,
+    sequence_design: bool = False,
 ) -> dict[str, Any]:
     return {
         "schema": "bindi.letter.v1",
         "case_id": case.get("case_id"),
-        "shown_sequences": _shown_sequences_from_designs(designs),
+        "shown_sequences": _shown_sequences_from_designs(
+            designs, sequence_design=sequence_design
+        ),
         "target_mutant": target.get("mutant_peptide"),
         "target_wild_type": target.get("wild_type_peptide"),
         "hazard_screen": {
@@ -122,6 +134,11 @@ def _letter_payload(
                 "Homology-based hazard screen with known limits; a pass is not a safety claim."
             ),
         },
+        **(
+            {"evidence_level": design_engine.EVIDENCE_LEVEL}
+            if sequence_design
+            else {}
+        ),
     }
 
 
@@ -172,6 +189,8 @@ def case_run(
     hazard_fasta: str | Path | None = None,
     hazard_source: str | None = None,
     margin_scorer_spec: str | None = None,
+    sequence_design: bool = False,
+    design_seed: int = 42,
 ) -> dict[str, Any]:
     """Run one synthetic immunology case end to end. Returns {"exit_code", "trace", ...}."""
     base = Path(workdir or Path.cwd())
@@ -245,6 +264,46 @@ def case_run(
             "hold_reasons": hold_reasons,
         }
 
+    if sequence_design:
+        if not target.get("signed"):
+            trace.emit(
+                "design",
+                "error",
+                reason="sequence design requires a signed case record",
+            )
+            trace.emit("case_summary", "error", exit_code=EXIT_CASE_ERROR)
+            return {
+                "exit_code": EXIT_CASE_ERROR,
+                "trace": str(trace_file),
+                "sha256": trace.checksum(),
+            }
+        if not target.get("consent_design_use"):
+            trace.emit(
+                "design",
+                "error",
+                reason="consent.design_use is false",
+            )
+            trace.emit("case_summary", "error", exit_code=EXIT_CASE_ERROR)
+            return {
+                "exit_code": EXIT_CASE_ERROR,
+                "trace": str(trace_file),
+                "sha256": trace.checksum(),
+            }
+        mutant_peptide = sequence_text(target.get("mutant_peptide")) or ""
+        wild_peptide = sequence_text(target.get("wild_type_peptide")) or ""
+        if not mutant_peptide or not wild_peptide:
+            trace.emit(
+                "design",
+                "error",
+                reason="sequence design requires mutant and wild-type peptides on the case",
+            )
+            trace.emit("case_summary", "error", exit_code=EXIT_CASE_ERROR)
+            return {
+                "exit_code": EXIT_CASE_ERROR,
+                "trace": str(trace_file),
+                "sha256": trace.checksum(),
+            }
+
     run_policy = dict(policy or {})
     bindcraft = dict(run_policy.get("bindcraft") or {})
     bindcraft.setdefault("campaign_name", case["case_id"])
@@ -255,37 +314,93 @@ def case_run(
     run_policy.setdefault("curation", {"top_n": 3})
     run_policy.setdefault("gallery", f"gallery/{case['case_id']}")
 
-    generation = generate(run_policy, workdir=base, dry_run=True)
-    trace.emit(
-        "design",
-        "fixture_backed",
-        project_folder=generation["project_folder"],
-        campaign_file=generation["campaign_file"],
-        designs_are_real=False,
-        hold_reasons=hold_reasons,
-        note=(
-            "No design was performed. The ranked table is bindi's fixture "
-            "(fixtures/sample_ranked.csv) copied into place; the sequences are invented and "
-            "have no relationship to this case's peptide."
-        ),
-    )
+    sequence_design_rows: list[dict[str, Any]] | None = None
+    if sequence_design:
+        bindcraft.setdefault("number_of_final_designs", 3)
+        project_folder = Path(bindcraft["project_folder"])
+        project_folder.mkdir(parents=True, exist_ok=True)
+        sequence_design_rows = design_engine.run_mutational_search(
+            mutant_peptide,
+            seed=design_seed,
+            final_count=int(bindcraft.get("number_of_final_designs") or 3),
+        )
+        design_engine.attach_wild_type_margins(
+            sequence_design_rows,
+            mutant_peptide=mutant_peptide,
+            wild_type_peptide=wild_peptide,
+        )
+        ranked_path = project_folder / "3_Ranked" / "!_Ranked.csv"
+        design_engine.write_ranked_table(ranked_path, sequence_design_rows)
+        generation = {
+            "status": "sequence_design",
+            "project_folder": str(project_folder),
+            "campaign_file": str(project_folder / "campaign.json"),
+        }
+        trace.emit(
+            "design",
+            "ok",
+            project_folder=generation["project_folder"],
+            designs_are_real=True,
+            design_tool=design_engine.TOOL_NAME,
+            design_tool_version=design_engine.TOOL_VERSION,
+            scoring_function=design_engine.SCORING_FUNCTION,
+            evidence_level=design_engine.EVIDENCE_LEVEL,
+            seed=design_seed,
+            hold_reasons=hold_reasons,
+            note=(
+                "Sequence-level designer v1: stochastic mutational search scored by "
+                "bindi.design_engine.score_binder_peptide. Not structure-validated."
+            ),
+        )
+        run_policy["curation"] = dict(run_policy.get("curation") or {})
+        run_policy["curation"]["rank_on"] = ["i_pTM"]
+        curation = curate(run_policy, project_folder=project_folder, workdir=base)
+    else:
+        generation = generate(run_policy, workdir=base, dry_run=True)
+        trace.emit(
+            "design",
+            "fixture_backed",
+            project_folder=generation["project_folder"],
+            campaign_file=generation["campaign_file"],
+            designs_are_real=False,
+            hold_reasons=hold_reasons,
+            note=(
+                "No design was performed. The ranked table is bindi's fixture "
+                "(fixtures/sample_ranked.csv) copied into place; the sequences are invented and "
+                "have no relationship to this case's peptide."
+            ),
+        )
+        curation = curate(run_policy, project_folder=generation["project_folder"], workdir=base)
 
-    curation = curate(run_policy, project_folder=generation["project_folder"], workdir=base)
     gallery_dir = Path(curation["gallery"])
-    designs = _designs_from_gallery(gallery_dir)
+    designs = sequence_design_rows or _designs_from_gallery(gallery_dir)
+    curate_note = (
+        "Gallery built from sequence-level designs ranked on i_pTM (= sequence score)."
+        if sequence_design
+        else "Gallery built from fixture rows; rank is suppressed for an unconfirmed metric."
+    )
     trace.emit(
         "curate",
         "ok",
         gallery=str(gallery_dir),
         manifest=curation["manifest"],
         count=curation["count"],
-        ranked=False,
-        note="Gallery built from fixture rows; rank is suppressed for an unconfirmed metric.",
+        ranked=bool(sequence_design),
+        evidence_level=design_engine.EVIDENCE_LEVEL if sequence_design else None,
+        note=curate_note,
     )
 
-    margin_record = margin.score_wild_type_margin(
-        target, designs, scorer_spec=margin_scorer_spec
+    margin_scorer = (
+        design_engine.score_binder_peptide if sequence_design else None
     )
+    margin_record = margin.score_wild_type_margin(
+        target,
+        designs,
+        scorer=margin_scorer,
+        scorer_spec=margin_scorer_spec if not sequence_design else None,
+    )
+    if sequence_design:
+        margin_record["evidence_level"] = design_engine.EVIDENCE_LEVEL
     trace.emit(
         "margin_wild_type",
         margin_record["status"],
@@ -325,13 +440,22 @@ def case_run(
             payload=str(handoff_path),
             note="Hand-off record written after both output gates passed.",
         )
-        letter = _letter_payload(case, target, designs, hazard_gate=hazard_gate)
+        letter = _letter_payload(
+            case,
+            target,
+            designs,
+            hazard_gate=hazard_gate,
+            sequence_design=sequence_design,
+        )
         letter_path.write_text(json.dumps(letter, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         trace.emit(
             "letter",
             "produced",
             payload=str(letter_path),
             shown_sequences=letter["shown_sequences"],
+            evidence_level=(
+                design_engine.EVIDENCE_LEVEL if sequence_design else None
+            ),
             note="Shown output emitted only after both gates passed.",
         )
     else:

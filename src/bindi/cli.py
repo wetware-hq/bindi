@@ -10,6 +10,8 @@ from pathlib import Path
 from . import VERSION
 from .case import CaseError, DesignHold
 from .curate import curate
+from . import design_engine
+from .case import load_case
 from .e2e import EXIT_CASE_ERROR, EXIT_HOLD, case_run
 from .generate import generate
 from .policy import load_policy, policy_from_nl_stub
@@ -76,6 +78,43 @@ def main(argv: list[str] | None = None) -> int:
     e2e.add_argument("--hazard-screen-fasta", help="Reference FASTA for the hazard screen gate")
     e2e.add_argument("--hazard-screen-source", help="Version/source label for the hazard screen")
     e2e.add_argument("--margin-scorer", help="module:function scorer for the wild-type margin")
+    e2e.add_argument(
+        "--sequence-design",
+        action="store_true",
+        help="Run the v1 sequence-level designer (signed case required; not structure-validated).",
+    )
+    e2e.add_argument(
+        "--design-seed",
+        type=int,
+        default=42,
+        help="RNG seed for --sequence-design (default 42).",
+    )
+
+    noise = sub.add_parser(
+        "sequence-design-repeat-noise",
+        help="Measure repeat-run score spread for PAIR-HARD and PAIR-EASY on a signed case.",
+    )
+    noise.add_argument(
+        "case",
+        help="Signed immunology case JSON with benchmark_pairs (PAIR-HARD, PAIR-EASY).",
+    )
+    noise.add_argument(
+        "--repeats",
+        type=int,
+        default=20,
+        help="Independent designer seeds per pair (default 20).",
+    )
+    noise.add_argument(
+        "--seed-start",
+        type=int,
+        default=1000,
+        help="First RNG seed for repeat runs (default 1000).",
+    )
+    noise.add_argument(
+        "--output",
+        type=Path,
+        help="Evidence JSON path (default evidence/sequence_design_repeat_noise.v1.json).",
+    )
 
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
 
@@ -90,6 +129,21 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     command = args.command
+
+    if command == "sequence-design-repeat-noise":
+        case = load_case(args.case)
+        if not case.get("signature", {}).get("signed"):
+            raise SystemExit("case record must be signed for repeat-noise measurement")
+        output = args.output or Path("evidence/sequence_design_repeat_noise.v1.json")
+        report = design_engine.write_repeat_noise_evidence(
+            case,
+            output,
+            repeats=args.repeats,
+            seed_start=args.seed_start,
+        )
+        json.dump(report, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
 
     if command == "recruit":
         json.dump(resource_descriptor(), sys.stdout, indent=2)
@@ -121,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
                 hazard_fasta=args.hazard_screen_fasta,
                 hazard_source=args.hazard_screen_source,
                 margin_scorer_spec=args.margin_scorer,
+                sequence_design=args.sequence_design,
+                design_seed=args.design_seed,
             )
         except DesignHold as exc:
             json.dump({"error": "design_hold", "detail": str(exc)}, sys.stdout, indent=2)

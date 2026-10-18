@@ -8,6 +8,10 @@
 ARG BASE_IMAGE=bindcraft:local
 FROM ${BASE_IMAGE}
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ncbi-blast+ mmseqs2 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /work
 
 COPY pyproject.toml README.md LICENSE /opt/bindi/

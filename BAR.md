@@ -8,7 +8,7 @@ What a green means in **bindi 🐨**, and what it does not. A green here is not 
 
 ```bash
 pip install -e .     # or: uv pip install -e .
-pytest               # 43 tests
+pytest               # 53 tests
 bindi run campaigns/pdl1.json --dry-run   # curation smoke-test on fixtures, no GPU
 ```
 
@@ -23,6 +23,8 @@ bindi run campaigns/pdl1.json --dry-run   # curation smoke-test on fixtures, no 
 - **Benchmark honesty** (`test_benchmark_record_present_and_unchecked`) — the `benchmark` record is present and cited, and its status is `unchecked`; no correlation number is fabricated.
 - **Licence tiers** (`test_deployable_path_rejects_evaluation_only_tools`, `test_deployable_path_accepts_deployable_tools`, `test_tool_tiers_are_cited`, `test_curate_manifest_tooling_is_deployable`) — `evaluation_only` tools (FEP+, PyRosetta, PBEE) are rejected from any lab-facing path; deployable tools pass; every tier is cited.
 - **Provenance** (`test_provenance_present`) — every design is marked an in-silico hypothesis until confirmed experimentally.
+- **Fixture-path disclosure** (`test_dry_run_pipeline_builds_gallery`, `test_fixture_path_statement_required_when_fixture_path_used`) — dry-run / fixture-path galleries carry a non-empty `fixture_path_statement` in plain language; a test fails if it is missing or empty when the fixture path was used.
+- **Structures recorded** (`test_structures_not_run_recorded_when_none_copied`, `test_structures_copied_status_when_mm_cif_present`) — `structures.copied` is explicit; when zero, `status` is `not_run` with a `reason`, not silence.
 - **Ensemble off by default** (`test_default_run_emits_no_ensemble_field_anywhere`, `test_default_run_does_not_reorder_by_ensemble`, `test_enabled_path_emits_full_ensemble`, `test_enabled_via_policy_flag`, `test_enabled_path_reorders_by_consensus`) — by default no `ensemble` field is written and no reorder happens; enabling it explicitly restores the full block, and both paths are tested.
 - **Ensemble internals** (`tests/test_ensemble.py`) — ranking, disagreement summary, triage, and not-comparable handling (fewer than two universes, missing/blank/non-numeric metric).
 - **Policy & pipeline** (`test_bare_bindcraft_json_normalizes`, `test_resolve_paths`, `test_dry_run_pipeline_builds_gallery`, `test_curate_existing_campaign`) — bare BindCraft2 JSON normalizes, paths resolve, and the dry-run and re-curate paths build a `bindi.gallery.v1` gallery.

@@ -115,6 +115,26 @@ def test_human_reference_gate_refuses_on_hit(tmp_path):
     row = hit["per_sequence"][0]
     assert row["global_identity"]["verdict"] == "refuse"
     assert hit["reference_sha256"]
+    blast = row["global_identity"]["blastp"]
+    assert blast and blast["query_start"] and blast["subject_start"]
+    assert blast["evalue"]
+
+
+def test_hazard_screen_refuses_homology_not_exact_match(tmp_path):
+    hazard = tmp_path / "hazard.fasta"
+    hazard.write_text(">motif\nGFTFSSYAMS\n", encoding="utf-8")
+    # One conservative substitution in the motif (S→T); below 100% global exact match.
+    binder = "W" * 30 + "GFTFSSYAMT" + "W" * 30
+    record = gates.hazard_screen_gate(
+        [{"design": "d1", "sequence": binder}],
+        hazard_fasta=hazard,
+        hazard_source="hazard-homology-test",
+    )
+    assert record["status"] == "refuse"
+    assert record["method"] == gates.HAZARD_SCREEN_METHOD
+    assert "homology" in record["method_limits"].lower()
+    row = record["per_sequence"][0]
+    assert row["local_window"]["verdict"] == "refuse" or row["global_identity"]["verdict"] == "refuse"
 
 
 def test_human_reference_gate_refuses_on_local_window_below_global_threshold(tmp_path):
@@ -192,6 +212,8 @@ def test_clean_pass_with_both_gates_writes_letter(tmp_path, monkeypatch):
         Path(result["letter"]).read_text(encoding="utf-8")
     )
     assert letter["shown_sequences"]
+    assert letter["hazard_screen"]["method"] == gates.HAZARD_SCREEN_METHOD
+    assert "homology" in letter["hazard_screen"]["method_limits"].lower()
     by_stage = {line["stage"]: line for line in lines}
     assert by_stage["letter"]["status"] == "produced"
     assert "human_reference_gate" in [line["stage"] for line in lines]

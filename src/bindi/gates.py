@@ -24,37 +24,50 @@ MMSEQS_ENV = "BINDI_MMSEQS_CMD"
 BLASTP_ENV = "BINDI_BLASTP_CMD"
 MAKEBLASTDB_ENV = "BINDI_MAKEBLASTDB_CMD"
 
-# Global identity (percent, 0–100) at or above which a human-reference hit refuses output.
-# Pending chief scientist sign-off: treats the whole reported alignment as one unit.
-HUMAN_REFERENCE_HIT_IDENTITY_PERCENT = 70
+# Chief Scientist (clinical): signed-off homology gate thresholds for bindi.
+CHIEF_SCIENTIST = "Chief Scientist"
 
-# Local window length (residues). Pending chief scientist sign-off: class-I peptide length;
-# catches self-epitope-sized stretches that global percent identity can miss.
-HUMAN_REFERENCE_WINDOW_LENGTH = 8
+# Independent global trigger: refuse when the reported alignment identity is at or above this
+# percent. Chief Scientist ruling: kept alongside the window rule; either may refuse.
+HOMOLOGY_GATE_GLOBAL_IDENTITY_PERCENT = 70
 
-# Identity (percent, 0–100) required within every window of WINDOW_LENGTH.
-# Pending chief scientist sign-off: high local identity on a self-sized window is refused.
-HUMAN_REFERENCE_WINDOW_IDENTITY_PERCENT = 90
+# Refuse on any local alignment window of at least this many residues. Chief Scientist
+# ruling: class-I-sized span; catches self-epitope / motif leakage global identity misses.
+HOMOLOGY_GATE_WINDOW_MIN_LENGTH = 8
 
-# MMseqs2 prefilter sensitivity so weak-global / strong-local hits are still reported.
-# Pending chief scientist sign-off: must stay below the window rule to avoid silent misses.
-HUMAN_REFERENCE_SEARCH_MIN_SEQ_ID_PERCENT = 30
+# Chief Scientist ruling: refuse when any WINDOW_MIN_LENGTH window is at or above this
+# percent identity (80% or better).
+HOMOLOGY_GATE_WINDOW_MIN_IDENTITY_PERCENT = 80
 
-# Hazard motifs: full-alignment identity at or near exact match.
-HAZARD_SCREEN_HIT_IDENTITY_PERCENT = 100
+# MMseqs2 search floor so alignments below the global threshold are still reported for the
+# window rule. Chief Scientist ruling: must stay below the window identity threshold.
+HOMOLOGY_GATE_SEARCH_MIN_SEQ_ID_PERCENT = 30
 
-# Pending chief scientist sign-off: shortest hazardous motif span to treat like an epitope.
-HAZARD_SCREEN_WINDOW_LENGTH = 8
+HUMAN_REFERENCE_HIT_IDENTITY_PERCENT = HOMOLOGY_GATE_GLOBAL_IDENTITY_PERCENT
+HUMAN_REFERENCE_WINDOW_LENGTH = HOMOLOGY_GATE_WINDOW_MIN_LENGTH
+HUMAN_REFERENCE_WINDOW_IDENTITY_PERCENT = HOMOLOGY_GATE_WINDOW_MIN_IDENTITY_PERCENT
+HUMAN_REFERENCE_SEARCH_MIN_SEQ_ID_PERCENT = HOMOLOGY_GATE_SEARCH_MIN_SEQ_ID_PERCENT
 
-# Pending chief scientist sign-off: identity within that span for hazard refusal.
-HAZARD_SCREEN_WINDOW_IDENTITY_PERCENT = 100
+HAZARD_SCREEN_HIT_IDENTITY_PERCENT = HOMOLOGY_GATE_GLOBAL_IDENTITY_PERCENT
+HAZARD_SCREEN_WINDOW_LENGTH = HOMOLOGY_GATE_WINDOW_MIN_LENGTH
+HAZARD_SCREEN_WINDOW_IDENTITY_PERCENT = HOMOLOGY_GATE_WINDOW_MIN_IDENTITY_PERCENT
+
+HAZARD_SCREEN_METHOD = "homology_based"
+HAZARD_SCREEN_METHOD_LIMITS = (
+    "Homology to a pinned hazard reference FASTA only (MMseqs2 + BLAST+). Not structural, "
+    "not immunogenicity, not toxicity in cell or in vivo, and not a complete hazard "
+    "inventory. A pass means no hit at the Chief Scientist thresholds in this reference; "
+    "it does not mean the design is safe to show or release."
+)
 
 DEFAULT_REFERENCE_SOURCE = "unconfigured"
 
 MMSEQS_ALIGN_FORMAT = (
-    "query,target,pident,qstart,qend,tstart,tend,qaln,taln"
+    "query,target,pident,evalue,qstart,qend,tstart,tend,qaln,taln"
 )
-BLAST_ALIGN_FORMAT = "6 qseqid sseqid pident qstart qend sstart send qseq sseq"
+BLAST_ALIGN_FORMAT = (
+    "6 qseqid sseqid pident evalue qstart qend sstart send qseq sseq"
+)
 
 
 def _sha256_file(path: Path) -> str:
@@ -108,11 +121,56 @@ def _format_percent(raw: str) -> str:
     return str(int(round(value)))
 
 
+def _format_evalue(raw: str) -> str:
+    return str(raw).strip() if raw is not None else ""
+
+
+def _trace_hit(hit: dict[str, str] | None) -> dict[str, str] | None:
+    """Hit fields written to the trace for human review (coordinates + E-value)."""
+    if not hit:
+        return None
+    return {
+        "tool": hit["tool"],
+        "target_id": hit.get("target_id", ""),
+        "identity_percent": hit.get("identity_percent", "0"),
+        "evalue": hit.get("evalue", ""),
+        "query_start": hit.get("qstart", ""),
+        "query_end": hit.get("qend", ""),
+        "subject_start": hit.get("tstart", ""),
+        "subject_end": hit.get("tend", ""),
+    }
+
+
+def _subject_span_for_query_window(
+    hit: dict[str, str],
+    query_start: int,
+    query_end: int,
+) -> tuple[str, str]:
+    qaln = hit.get("qaln") or ""
+    taln = hit.get("taln") or ""
+    subject_positions: list[int] = []
+    t_pos = int(hit.get("tstart") or "1")
+    tend = int(hit.get("tend") or "1")
+    t_step = 1 if tend >= t_pos else -1
+    q_idx = 0
+    for qc, tc in zip(qaln, taln):
+        if qc != "-":
+            q_idx += 1
+            if query_start <= q_idx <= query_end and tc != "-":
+                subject_positions.append(t_pos)
+        if tc != "-":
+            t_pos += t_step
+    if not subject_positions:
+        return hit.get("tstart", ""), hit.get("tend", "")
+    return str(min(subject_positions)), str(max(subject_positions))
+
+
 def _best_window_in_alignment(
     qaln: str,
     taln: str,
     *,
     window_length: int,
+    hit: dict[str, str] | None = None,
 ) -> dict[str, str] | None:
     """Best identity in any query window from tool-reported local alignment strings."""
     if not qaln or not taln or len(qaln) != len(taln):
@@ -134,12 +192,20 @@ def _best_window_in_alignment(
         if identity > best_identity:
             best_identity = identity
             best_start = start
-    return {
+    qs = best_start + 1
+    qe = best_start + window_length
+    window = {
         "identity_percent": str(best_identity),
-        "query_start": str(best_start + 1),
-        "query_end": str(best_start + window_length),
+        "query_start": str(qs),
+        "query_end": str(qe),
         "window_length": str(window_length),
     }
+    if hit:
+        subj_start, subj_end = _subject_span_for_query_window(hit, qs, qe)
+        window["subject_start"] = subj_start
+        window["subject_end"] = subj_end
+        window["evalue"] = hit.get("evalue", "")
+    return window
 
 
 def _window_from_hit(
@@ -152,7 +218,9 @@ def _window_from_hit(
     qaln = hit.get("qaln") or ""
     taln = hit.get("taln") or hit.get("sseq") or ""
     if qaln and taln:
-        window = _best_window_in_alignment(qaln, taln, window_length=window_length)
+        window = _best_window_in_alignment(
+            qaln, taln, window_length=window_length, hit=hit
+        )
         if window:
             window = dict(window)
             window["tool"] = hit["tool"]
@@ -167,15 +235,16 @@ def _parse_mmseqs_alignments(text: str) -> dict[str, list[dict[str, str]]]:
         if not line.strip():
             continue
         parts = line.split("\t")
-        if len(parts) < 9:
+        if len(parts) < 10:
             continue
-        qid, target_id, pident = parts[0], parts[1], parts[2]
-        qstart, qend, tstart, tend = parts[3], parts[4], parts[5], parts[6]
-        qaln, taln = parts[7], parts[8]
+        qid, target_id, pident, evalue = parts[0], parts[1], parts[2], parts[3]
+        qstart, qend, tstart, tend = parts[4], parts[5], parts[6], parts[7]
+        qaln, taln = parts[8], parts[9]
         entry = {
             "tool": "mmseqs2",
             "target_id": target_id,
             "identity_percent": _format_percent(pident),
+            "evalue": _format_evalue(evalue),
             "qstart": qstart,
             "qend": qend,
             "tstart": tstart,
@@ -193,15 +262,16 @@ def _parse_blast_alignments(text: str) -> dict[str, list[dict[str, str]]]:
         if not line.strip():
             continue
         parts = line.split("\t")
-        if len(parts) < 9:
+        if len(parts) < 10:
             continue
-        qid, target_id, pident = parts[0], parts[1], parts[2]
-        qstart, qend, sstart, send = parts[3], parts[4], parts[5], parts[6]
-        qseq, sseq = parts[7], parts[8]
+        qid, target_id, pident, evalue = parts[0], parts[1], parts[2], parts[3]
+        qstart, qend, sstart, send = parts[4], parts[5], parts[6], parts[7]
+        qseq, sseq = parts[8], parts[9]
         entry = {
             "tool": "blastp",
             "target_id": target_id,
             "identity_percent": _format_percent(pident),
+            "evalue": _format_evalue(evalue),
             "qstart": qstart,
             "qend": qend,
             "tstart": sstart,
@@ -231,8 +301,8 @@ def _global_verdict(
     return {
         "verdict": verdict,
         "threshold_identity_percent": threshold_percent,
-        "mmseqs2": mm,
-        "blastp": bl,
+        "mmseqs2": _trace_hit(mm),
+        "blastp": _trace_hit(bl),
     }
 
 
@@ -260,13 +330,28 @@ def _window_verdict(
         and int(bl_window["identity_percent"]) >= window_identity_percent
     )
     verdict = "refuse" if (mm_refuse or bl_refuse) else "pass"
+    def _trace_window(window: dict[str, str] | None) -> dict[str, str] | None:
+        if not window:
+            return None
+        return {
+            "tool": window.get("tool", ""),
+            "target_id": window.get("target_id", ""),
+            "identity_percent": window.get("identity_percent", ""),
+            "evalue": window.get("evalue", ""),
+            "query_start": window.get("query_start", ""),
+            "query_end": window.get("query_end", ""),
+            "subject_start": window.get("subject_start", ""),
+            "subject_end": window.get("subject_end", ""),
+            "window_length": window.get("window_length", str(window_length)),
+        }
+
     return {
         "verdict": verdict,
         "window_length": window_length,
         "window_identity_percent_threshold": window_identity_percent,
-        "mmseqs2": mm_window,
-        "blastp": bl_window,
-        "best_window": best,
+        "mmseqs2": _trace_window(mm_window),
+        "blastp": _trace_window(bl_window),
+        "best_window": _trace_window(best),
     }
 
 
@@ -460,6 +545,8 @@ def _homology_gate(
     window_identity_percent: int,
     search_min_seq_id_percent: int,
     tmp_prefix: str,
+    method: str | None = None,
+    method_limits: str | None = None,
 ) -> dict[str, Any]:
     designs = designs or []
     record: dict[str, Any] = {
@@ -474,6 +561,10 @@ def _homology_gate(
         "per_sequence": [],
         "verdict": None,
     }
+    if method is not None:
+        record["method"] = method
+    if method_limits is not None:
+        record["method_limits"] = method_limits
 
     reference = reference_fasta or os.environ.get(reference_env)
     if not reference:
@@ -594,6 +685,8 @@ def hazard_screen_gate(
         global_threshold_percent=HAZARD_SCREEN_HIT_IDENTITY_PERCENT,
         window_length=HAZARD_SCREEN_WINDOW_LENGTH,
         window_identity_percent=HAZARD_SCREEN_WINDOW_IDENTITY_PERCENT,
-        search_min_seq_id_percent=HAZARD_SCREEN_WINDOW_IDENTITY_PERCENT,
+        search_min_seq_id_percent=HOMOLOGY_GATE_SEARCH_MIN_SEQ_ID_PERCENT,
         tmp_prefix="bindi-hazard-",
+        method=HAZARD_SCREEN_METHOD,
+        method_limits=HAZARD_SCREEN_METHOD_LIMITS,
     )

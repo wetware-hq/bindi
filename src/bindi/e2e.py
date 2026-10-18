@@ -101,6 +101,8 @@ def _letter_payload(
     case: dict[str, Any],
     target: dict[str, Any],
     designs: list[dict[str, Any]],
+    *,
+    hazard_gate: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     return {
         "schema": "bindi.letter.v1",
@@ -108,6 +110,18 @@ def _letter_payload(
         "shown_sequences": _shown_sequences_from_designs(designs),
         "target_mutant": target.get("mutant_peptide"),
         "target_wild_type": target.get("wild_type_peptide"),
+        "hazard_screen": {
+            "method": hazard_gate.get("method", gates.HAZARD_SCREEN_METHOD)
+            if hazard_gate
+            else gates.HAZARD_SCREEN_METHOD,
+            "method_limits": hazard_gate.get("method_limits", gates.HAZARD_SCREEN_METHOD_LIMITS)
+            if hazard_gate
+            else gates.HAZARD_SCREEN_METHOD_LIMITS,
+            "status": (hazard_gate or {}).get("status"),
+            "note": (
+                "Homology-based hazard screen with known limits; a pass is not a safety claim."
+            ),
+        },
     }
 
 
@@ -311,7 +325,7 @@ def case_run(
             payload=str(handoff_path),
             note="Hand-off record written after both output gates passed.",
         )
-        letter = _letter_payload(case, target, designs)
+        letter = _letter_payload(case, target, designs, hazard_gate=hazard_gate)
         letter_path.write_text(json.dumps(letter, indent=2, sort_keys=True) + "\n", encoding="utf-8")
         trace.emit(
             "letter",

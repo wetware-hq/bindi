@@ -42,6 +42,8 @@ The design step is **reproducible given a seed, not deterministic.** The manifes
 The `index.json` manifest adds, beyond the ranked `entries`:
 
 - **`claim`** — the relative-only statement above.
+- **`fixture_path_statement`** — when the run used bundled fixtures with no design compute (`bindi run --dry-run`), a plain-language statement that the gallery exercises record-keeping only, not binding chemistry, and that no design has been shown to bind. Omitted when a real design step ran.
+- **`structures`** — how mmCIF copies into `structures/` were handled: `copied` count, `status` (`copied` or `not_run`), and when nothing was copied a `reason` (never left implicit).
 - **`disclosures`** — five fixed lines that must appear on every gallery: for testing only (not real patients); candidate order is from the published trial, not computed here; the prediction step is present but unverified; identity and sign-off gates are specified but unbuilt; no hazard screen has been applied. A test fails if any of the five is missing.
 - **`release` / `not_a_release`** — `release` is always `false`; `not_a_release` states that no hazard screen has been applied, so the release condition has not been met.
 - **`rank_meaning`** — records that `rank` is a pass-signal ordering, not affinity or potency.
@@ -58,7 +60,7 @@ The `index.json` manifest adds, beyond the ranked `entries`:
 
 ## Bar
 
-`pip install -e .` then `pytest` (43 tests) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
+`pip install -e .` then `pytest` (53 tests) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
 
 ## Deployment
 

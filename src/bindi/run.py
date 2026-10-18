@@ -24,5 +24,6 @@ def run(
         workdir=workdir,
         use_bindcraft_rank=use_bindcraft_rank and not dry_run,
         use_ensemble=use_ensemble,
+        fixture_path=dry_run,
     )
     return {"generate": generation, "curate": curation}

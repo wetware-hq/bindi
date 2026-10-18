@@ -72,6 +72,38 @@ def test_provenance_present(tmp_path):
     assert "experimental" in prov.get("statement", "").lower()
 
 
+def test_structures_not_run_recorded_when_none_copied(tmp_path):
+    m = _gallery(tmp_path)
+    structures = m.get("structures")
+    assert structures is not None
+    assert structures.get("copied") == 0
+    assert structures.get("status") == "not_run"
+    reason = structures.get("reason")
+    assert reason and reason.strip(), "structures.reason must be recorded when nothing was copied"
+
+
+def test_structures_copied_status_when_mm_cif_present(tmp_path):
+    project = tmp_path / "results" / "with_cif"
+    ranked = project / "3_Ranked"
+    ranked.mkdir(parents=True)
+    shutil.copy(FIXTURES / "sample_ranked.csv", ranked / "!_Ranked.csv")
+    cif = project / "pdl1_binder_seq1_model.cif"
+    cif.write_text("data_demo\n", encoding="utf-8")
+    curate(
+        {
+            "bindcraft": {"project_folder": str(project)},
+            "curation": {"top_n": 1, "rank_on": ["i_pTM"]},
+            "gallery": "gallery",
+        },
+        workdir=tmp_path,
+    )
+    m = json.loads((tmp_path / "gallery" / "index.json").read_text(encoding="utf-8"))
+    structures = m["structures"]
+    assert structures["copied"] == 1
+    assert structures["status"] == "copied"
+    assert "reason" not in structures
+
+
 # --- Learning 3: BENCHMARK DISCIPLINE ------------------------------------------
 
 def test_benchmark_record_present_and_unchecked(tmp_path):

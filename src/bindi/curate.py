@@ -24,6 +24,15 @@ RELATIVE_CLAIM = (
     "Relative ranking among the designs in this campaign only. No absolute affinity, "
     "Kd/Ki/IC50, or kcal/mol value is predicted or implied; ranking is never a safety claim."
 )
+FIXTURE_PATH_STATEMENT = (
+    "This run used bundled fixtures with no design compute: it exercises record-keeping "
+    "and curation layout only, not binding chemistry. No design in this gallery has been "
+    "shown to bind."
+)
+STRUCTURES_NOT_RUN_REASON = (
+    "No structure files were copied into the gallery (none were found under the campaign "
+    "folder for the selected designs)."
+)
 PROVENANCE_STATEMENT = (
     "In-silico hypotheses until confirmed experimentally (affinity, specificity, "
     "developability, and safety; for therapeutics, through the appropriate regulatory path)."
@@ -224,6 +233,16 @@ def _reproducibility(bindcraft: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _structures_manifest(copied_count: int) -> dict[str, Any]:
+    block: dict[str, Any] = {"copied": copied_count}
+    if copied_count:
+        block["status"] = "copied"
+    else:
+        block["status"] = "not_run"
+        block["reason"] = STRUCTURES_NOT_RUN_REASON
+    return block
+
+
 def curate(
     policy: dict[str, Any],
     *,
@@ -232,6 +251,7 @@ def curate(
     use_bindcraft_rank: bool = False,
     bindcraft_cmd: str = "bindcraft",
     use_ensemble: bool = False,
+    fixture_path: bool = False,
 ) -> dict[str, Any]:
     policy = normalize_policy(policy)
     base = workdir or Path.cwd()
@@ -367,7 +387,10 @@ def curate(
         "benchmark": data.benchmark_record(),
         "tooling": {"path": "deployable", "tools": list(DEPLOYABLE_TOOLS)},
         "entries": entries,
+        "structures": _structures_manifest(len(copied)),
     }
+    if fixture_path:
+        manifest["fixture_path_statement"] = FIXTURE_PATH_STATEMENT
     if rank_suppressed:
         manifest["rank_meaning"] = RANK_SUPPRESSED_MEANING
         manifest["rank_suppressed"] = True

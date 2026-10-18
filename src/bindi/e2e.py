@@ -1,21 +1,7 @@
 """One command, one case, one trace.
 
 `bindi case-run <case.json>` runs a synthetic clinical-immunology case end to end and
-writes a single JSONL trace covering every stage:
-
-    case record -> target extraction -> binder step (fixture-backed) -> wild-type margin
-    hook -> human-reference gate -> ward hand-off -> case summary
-
-What is real here: the case record is read and validated, the target is extracted from it,
-the fixture-backed binder step and gallery curation really run, and every stage is traced
-with a status and an exit code. What is a placeholder: the binder step produces fixture
-designs, not designs (no BindCraft, no Modal, no GPU); the margin is a hook that reports
-`not_computed`; the human-reference gate reports `unbuilt` unless a reference is supplied;
-and the ward hand-off is written to disk but not invoked, because ward has no entry point
-for an arbitrary case. Each of those says so in its own trace line.
-
-The design hold is enforced in code, not by convention: `--design` on an unsigned record
-raises `case.DesignHold` and the run exits non-zero without calling BindCraft.
+writes a single JSONL trace covering every stage through output gates and a run verdict.
 """
 
 from __future__ import annotations
@@ -33,7 +19,11 @@ from . import case as case_mod
 from . import gates, margin
 from .curate import curate
 from .generate import generate
+from . import design_engine
+from .provenance import fixture_sequence, sequence_text
 from .resource import VERSION
+from .trace_validate import validate_trace_record
+from .verdict import evaluate_run_verdict
 
 TRACE_SCHEMA = "bindi.case_trace.v1"
 CLOCK_ENV = "BINDI_CLOCK"
@@ -42,7 +32,7 @@ TEST_CLOCK = "1937-01-01T00:00:00Z"
 EXIT_OK = 0
 EXIT_CASE_ERROR = 1
 EXIT_HOLD = 2
-EXIT_GATE_FAIL = 3
+EXIT_VERDICT_FAIL = 3
 
 
 def _now() -> str:
@@ -71,6 +61,12 @@ class Trace:
             "status": status,
             **fields,
         }
+        problems = validate_trace_record(record)
+        if problems:
+            raise ValueError(
+                "trace record failed structural validation at "
+                f"{stage}: " + "; ".join(problems)
+            )
         self.lines.append(record)
         with self.path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
@@ -91,8 +87,64 @@ def _designs_from_gallery(gallery_dir: Path) -> list[dict[str, Any]]:
     ]
 
 
-def _ward_handoff_payload(case: dict[str, Any], target: dict[str, Any], designs: list[dict[str, Any]]) -> dict[str, Any]:
-    """The facts ward's gates and letter would need. Built, not sent."""
+def _shown_sequences_from_designs(
+    designs: list[dict[str, Any]], *, sequence_design: bool = False
+) -> list[dict[str, Any]]:
+    if sequence_design:
+        return [
+            design["sequence_field"]
+            for design in designs
+            if design.get("sequence_field")
+        ]
+    return [
+        fixture_sequence(
+            str(design["sequence"]),
+            source="fixtures/sample_ranked.csv (fixture-backed binder step)",
+        )
+        for design in designs
+        if design.get("sequence")
+    ]
+
+
+def _letter_payload(
+    case: dict[str, Any],
+    target: dict[str, Any],
+    designs: list[dict[str, Any]],
+    *,
+    hazard_gate: dict[str, Any] | None = None,
+    sequence_design: bool = False,
+) -> dict[str, Any]:
+    return {
+        "schema": "bindi.letter.v1",
+        "case_id": case.get("case_id"),
+        "shown_sequences": _shown_sequences_from_designs(
+            designs, sequence_design=sequence_design
+        ),
+        "target_mutant": target.get("mutant_peptide"),
+        "target_wild_type": target.get("wild_type_peptide"),
+        "hazard_screen": {
+            "method": hazard_gate.get("method", gates.HAZARD_SCREEN_METHOD)
+            if hazard_gate
+            else gates.HAZARD_SCREEN_METHOD,
+            "method_limits": hazard_gate.get("method_limits", gates.HAZARD_SCREEN_METHOD_LIMITS)
+            if hazard_gate
+            else gates.HAZARD_SCREEN_METHOD_LIMITS,
+            "status": (hazard_gate or {}).get("status"),
+            "note": (
+                "Homology-based hazard screen with known limits; a pass is not a safety claim."
+            ),
+        },
+        **(
+            {"evidence_level": design_engine.EVIDENCE_LEVEL}
+            if sequence_design
+            else {}
+        ),
+    }
+
+
+def _ward_handoff_payload(
+    case: dict[str, Any], target: dict[str, Any], designs: list[dict[str, Any]]
+) -> dict[str, Any]:
     return {
         "schema": "bindi.ward_handoff.v1",
         "case_id": case.get("case_id"),
@@ -112,10 +164,17 @@ def _ward_handoff_payload(case: dict[str, Any], target: dict[str, Any], designs:
         ),
         "release": False,
         "not_a_release": (
-            "Fixture-backed run on an unsigned placeholder record; no design run, no margin, "
-            "human-reference gate unbuilt, no hazard screen."
+            "Fixture-backed run; both output gates passed before this hand-off was written."
         ),
     }
+
+
+def _emit_gate(trace: Trace, stage: str, gate_record: dict[str, Any]) -> None:
+    trace.emit(
+        stage,
+        gate_record["status"],
+        **{k: v for k, v in gate_record.items() if k != "status"},
+    )
 
 
 def case_run(
@@ -126,7 +185,13 @@ def case_run(
     trace_path: Path | None = None,
     allow_design: bool = False,
     reference_fasta: str | Path | None = None,
+    reference_source: str | None = None,
+    hazard_fasta: str | Path | None = None,
+    hazard_source: str | None = None,
     margin_scorer_spec: str | None = None,
+    sequence_design: bool = False,
+    design_seed: int = 42,
+    design_scorer_id: str | None = None,
 ) -> dict[str, Any]:
     """Run one synthetic immunology case end to end. Returns {"exit_code", "trace", ...}."""
     base = Path(workdir or Path.cwd())
@@ -144,7 +209,6 @@ def case_run(
         note="Synthetic patients only. Not a medical device. For testing only.",
     )
 
-    # ---- stage 1: case record -------------------------------------------------
     try:
         case = case_mod.load_case(case_path)
     except case_mod.CaseError as exc:
@@ -165,21 +229,22 @@ def case_run(
         reason=(case.get("signature") or {}).get("placeholder_reason"),
     )
 
-    # ---- stage 2: target extraction (the seam) --------------------------------
     target = case_mod.resolve_target(policy or {}, case=case)
+    neo = case.get("neoantigen") or {}
+    mutant_field = neo.get("mutant_peptide")
+    wild_field = neo.get("wild_type_peptide")
     trace.emit(
         "target_resolve",
         "ok",
         source=target["source"],
         target_id=target["target_id"],
         restriction_allele=target["restriction_allele"],
-        mutant_peptide=target["mutant_peptide"],
-        wild_type_peptide=target["wild_type_peptide"],
+        mutant_peptide=mutant_field,
+        wild_type_peptide=wild_field,
         signed=target["signed"],
         note=target["note"],
     )
 
-    # ---- stage 3: binder step (fixture-backed; the hold lives here) -----------
     hold_reasons = case_mod.design_hold_reasons(target)
     if allow_design:
         trace.emit(
@@ -200,6 +265,46 @@ def case_run(
             "hold_reasons": hold_reasons,
         }
 
+    if sequence_design:
+        if not target.get("signed"):
+            trace.emit(
+                "design",
+                "error",
+                reason="sequence design requires a signed case record",
+            )
+            trace.emit("case_summary", "error", exit_code=EXIT_CASE_ERROR)
+            return {
+                "exit_code": EXIT_CASE_ERROR,
+                "trace": str(trace_file),
+                "sha256": trace.checksum(),
+            }
+        if not target.get("consent_design_use"):
+            trace.emit(
+                "design",
+                "error",
+                reason="consent.design_use is false",
+            )
+            trace.emit("case_summary", "error", exit_code=EXIT_CASE_ERROR)
+            return {
+                "exit_code": EXIT_CASE_ERROR,
+                "trace": str(trace_file),
+                "sha256": trace.checksum(),
+            }
+        mutant_peptide = sequence_text(target.get("mutant_peptide")) or ""
+        wild_peptide = sequence_text(target.get("wild_type_peptide")) or ""
+        if not mutant_peptide or not wild_peptide:
+            trace.emit(
+                "design",
+                "error",
+                reason="sequence design requires mutant and wild-type peptides on the case",
+            )
+            trace.emit("case_summary", "error", exit_code=EXIT_CASE_ERROR)
+            return {
+                "exit_code": EXIT_CASE_ERROR,
+                "trace": str(trace_file),
+                "sha256": trace.checksum(),
+            }
+
     run_policy = dict(policy or {})
     bindcraft = dict(run_policy.get("bindcraft") or {})
     bindcraft.setdefault("campaign_name", case["case_id"])
@@ -210,112 +315,203 @@ def case_run(
     run_policy.setdefault("curation", {"top_n": 3})
     run_policy.setdefault("gallery", f"gallery/{case['case_id']}")
 
-    generation = generate(run_policy, workdir=base, dry_run=True)
-    trace.emit(
-        "design",
-        "fixture_backed",
-        project_folder=generation["project_folder"],
-        campaign_file=generation["campaign_file"],
-        designs_are_real=False,
-        hold_reasons=hold_reasons,
-        note=(
-            "No design was performed. The ranked table is bindi's fixture "
-            "(fixtures/sample_ranked.csv) copied into place; the sequences are invented and "
-            "have no relationship to this case's peptide."
-        ),
-    )
+    sequence_design_rows: list[dict[str, Any]] | None = None
+    sequence_scorer_meta: dict[str, Any] | None = None
+    if sequence_design:
+        scorer_id, score_fn, sequence_scorer_meta = design_engine.resolve_scorer(
+            design_scorer_id
+        )
+        bindcraft.setdefault("number_of_final_designs", 3)
+        project_folder = Path(bindcraft["project_folder"])
+        project_folder.mkdir(parents=True, exist_ok=True)
+        sequence_design_rows = design_engine.run_mutational_search(
+            mutant_peptide,
+            seed=design_seed,
+            final_count=int(bindcraft.get("number_of_final_designs") or 3),
+            scorer_id=scorer_id,
+        )
+        design_engine.attach_wild_type_margins(
+            sequence_design_rows,
+            mutant_peptide=mutant_peptide,
+            wild_type_peptide=wild_peptide,
+            scorer_id=scorer_id,
+        )
+        ranked_path = project_folder / "3_Ranked" / "!_Ranked.csv"
+        design_engine.write_ranked_table(ranked_path, sequence_design_rows)
+        generation = {
+            "status": "sequence_design",
+            "project_folder": str(project_folder),
+            "campaign_file": str(project_folder / "campaign.json"),
+        }
+        trace.emit(
+            "design",
+            "ok",
+            project_folder=generation["project_folder"],
+            designs_are_real=True,
+            design_tool=design_engine.TOOL_NAME,
+            design_tool_version=design_engine.TOOL_VERSION,
+            scorer_id=scorer_id,
+            scorer_version=sequence_scorer_meta["version"],
+            scoring_function=sequence_scorer_meta["scoring_function"],
+            evidence_level=design_engine.EVIDENCE_LEVEL,
+            seed=design_seed,
+            hold_reasons=hold_reasons,
+            note=(
+                "Sequence-level designer: stochastic mutational search with explicit scorer "
+                f"{scorer_id!r}. Not structure-validated."
+            ),
+        )
+        run_policy["curation"] = dict(run_policy.get("curation") or {})
+        run_policy["curation"]["rank_on"] = ["i_pTM"]
+        curation = curate(run_policy, project_folder=project_folder, workdir=base)
+    else:
+        generation = generate(run_policy, workdir=base, dry_run=True)
+        trace.emit(
+            "design",
+            "fixture_backed",
+            project_folder=generation["project_folder"],
+            campaign_file=generation["campaign_file"],
+            designs_are_real=False,
+            hold_reasons=hold_reasons,
+            note=(
+                "No design was performed. The ranked table is bindi's fixture "
+                "(fixtures/sample_ranked.csv) copied into place; the sequences are invented and "
+                "have no relationship to this case's peptide."
+            ),
+        )
+        curation = curate(run_policy, project_folder=generation["project_folder"], workdir=base)
 
-    curation = curate(run_policy, project_folder=generation["project_folder"], workdir=base)
     gallery_dir = Path(curation["gallery"])
-    designs = _designs_from_gallery(gallery_dir)
+    designs = sequence_design_rows or _designs_from_gallery(gallery_dir)
+    curate_note = (
+        "Gallery built from sequence-level designs ranked on i_pTM (= sequence score)."
+        if sequence_design
+        else "Gallery built from fixture rows; rank is suppressed for an unconfirmed metric."
+    )
     trace.emit(
         "curate",
         "ok",
         gallery=str(gallery_dir),
         manifest=curation["manifest"],
         count=curation["count"],
-        ranked=False,
-        note="Gallery built from fixture rows; rank is suppressed for an unconfirmed metric.",
+        ranked=bool(sequence_design),
+        evidence_level=design_engine.EVIDENCE_LEVEL if sequence_design else None,
+        note=curate_note,
     )
 
-    # ---- stage 4: wild-type margin hook ---------------------------------------
+    margin_scorer = score_fn if sequence_design else None
     margin_record = margin.score_wild_type_margin(
-        target, designs, scorer_spec=margin_scorer_spec
+        target,
+        designs,
+        scorer=margin_scorer,
+        scorer_spec=margin_scorer_spec if not sequence_design else None,
     )
+    if sequence_design and sequence_scorer_meta:
+        margin_record["evidence_level"] = design_engine.EVIDENCE_LEVEL
+        margin_record["scorer_id"] = scorer_id
+        margin_record["scorer_version"] = sequence_scorer_meta["version"]
     trace.emit(
         "margin_wild_type",
         margin_record["status"],
-        **{k: v for k, v in margin_record.items() if k != "status"},
+        **{
+            k: v
+            for k, v in margin_record.items()
+            if k not in {"status", "mutant_peptide", "wild_type_peptide"}
+        },
     )
 
-    # ---- stage 5: human-reference gate ----------------------------------------
-    gate_record = gates.human_reference_gate(designs, reference_fasta=reference_fasta)
-    trace.emit(
-        "human_reference_gate",
-        gate_record["status"],
-        **{k: v for k, v in gate_record.items() if k != "status"},
+    human_gate = gates.human_reference_gate(
+        designs,
+        target=target,
+        reference_fasta=reference_fasta,
+        reference_source=reference_source,
     )
+    _emit_gate(trace, "human_reference_gate", human_gate)
 
-    # ---- stage 6: ward hand-off (built, not invoked) --------------------------
-    handoff = _ward_handoff_payload(case, target, designs)
+    hazard_gate = gates.hazard_screen_gate(
+        designs,
+        target=target,
+        hazard_fasta=hazard_fasta,
+        hazard_source=hazard_source,
+    )
+    _emit_gate(trace, "hazard_screen", hazard_gate)
+
+    gates_cleared = human_gate["status"] == "pass" and hazard_gate["status"] == "pass"
     handoff_path = gallery_dir / "ward_handoff.json"
-    handoff_path.write_text(json.dumps(handoff, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    trace.emit(
-        "ward_handoff",
-        "not_invoked",
-        payload=str(handoff_path),
-        note=(
-            "The hand-off record ward's gates and letter would consume is written here, but "
-            "ward was not called: ward runs fifteen fixed scenarios (S01-S15) and exposes no "
-            "entry point for an arbitrary case, so the ward gates and the letter did NOT run "
-            "in this trace."
-        ),
-    )
-    trace.emit(
-        "letter",
-        "not_produced",
-        note=(
-            "No letter was produced. Letters come from ward's letters endware, which this run "
-            "does not reach."
-        ),
-    )
+    letter_path = gallery_dir / "letter.json"
 
-    # ---- stage 7: summary ------------------------------------------------------
-    blocking = list(hold_reasons)
-    exit_code = EXIT_OK
-    if gate_record["status"] == "fail":
-        exit_code = EXIT_GATE_FAIL
+    if gates_cleared:
+        handoff = _ward_handoff_payload(case, target, designs)
+        handoff_path.write_text(json.dumps(handoff, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        trace.emit(
+            "ward_handoff",
+            "built",
+            payload=str(handoff_path),
+            note="Hand-off record written after both output gates passed.",
+        )
+        letter = _letter_payload(
+            case,
+            target,
+            designs,
+            hazard_gate=hazard_gate,
+            sequence_design=sequence_design,
+        )
+        letter_path.write_text(json.dumps(letter, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        trace.emit(
+            "letter",
+            "produced",
+            payload=str(letter_path),
+            shown_sequences=letter["shown_sequences"],
+            evidence_level=(
+                design_engine.EVIDENCE_LEVEL if sequence_design else None
+            ),
+            note="Shown output emitted only after both gates passed.",
+        )
+    else:
+        trace.emit(
+            "ward_handoff",
+            "blocked",
+            note="Output gates refused; no hand-off was written.",
+        )
+        trace.emit(
+            "letter",
+            "blocked",
+            note="Output gates refused; no letter or other shown output was written.",
+        )
+
+    run_verdict = evaluate_run_verdict(trace.lines)
+    exit_code = EXIT_OK if run_verdict["verdict"] == "pass" else EXIT_VERDICT_FAIL
+    summary_status = (
+        "complete_fixture_backed"
+        if gates_cleared and exit_code == EXIT_OK
+        else "gates_refused"
+        if not gates_cleared and exit_code == EXIT_OK
+        else "verdict_fail"
+    )
     trace.emit(
         "case_summary",
-        "complete_fixture_backed" if exit_code == EXIT_OK else "gate_fail",
+        summary_status,
         exit_code=exit_code,
+        run_verdict=run_verdict["verdict"],
+        run_verdict_reason=run_verdict["reason"],
         stages=[line["stage"] for line in trace.lines],
-        real=[
-            "case record read and validated",
-            "target extracted from the case record",
-            "fixture-backed binder step and gallery",
-            "single JSONL trace with per-stage statuses",
-        ],
-        placeholder=[
-            "no design run (no BindCraft, no Modal, no GPU)",
-            f"wild-type margin: {margin_record['status']}",
-            f"human-reference gate: {gate_record['status']}",
-            "ward gates and letter: not invoked",
-            "candidates unranked, no binding evidence",
-        ],
-        design_hold=blocking,
+        human_reference_gate=human_gate["status"],
+        hazard_screen=hazard_gate["status"],
+        design_hold=list(hold_reasons),
         release=False,
     )
-    checksum = trace.checksum()
     return {
         "exit_code": exit_code,
         "trace": str(trace_file),
-        "sha256": checksum,
+        "sha256": trace.checksum(),
         "gallery": str(gallery_dir),
-        "handoff": str(handoff_path),
-        "design_hold": blocking,
+        "handoff": str(handoff_path) if gates_cleared else None,
+        "letter": str(letter_path) if gates_cleared else None,
+        "design_hold": hold_reasons,
         "margin_status": margin_record["status"],
-        "human_reference_gate": gate_record["status"],
+        "human_reference_gate": human_gate["status"],
+        "hazard_screen": hazard_gate["status"],
+        "run_verdict": run_verdict["verdict"],
     }
 
 

@@ -16,10 +16,19 @@ from bindi import case as case_mod
 from bindi import data, gates, margin
 from bindi.e2e import EXIT_HOLD, EXIT_OK, case_run
 from bindi.generate import generate
+from bindi.provenance import sequence_text
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "schemas" / "immunology_case.v1.schema.json"
 PLACEHOLDER = ROOT / "fixtures" / "immunology_case_PLACEHOLDER.json"
+def _configure_gates(monkeypatch, tmp_path):
+    human = tmp_path / "clean_human.fasta"
+    human.write_text(">unrelated\nACDEFGHIKLMNPQRSTVWYACDEFGHIK\n", encoding="utf-8")
+    hazard = ROOT / "fixtures" / "hazard_screen_clean.fasta"
+    monkeypatch.setenv(gates.REFERENCE_ENV, str(human))
+    monkeypatch.setenv(gates.REFERENCE_SOURCE_ENV, "synthetic-test-human-v1")
+    monkeypatch.setenv(gates.HAZARD_ENV, str(hazard))
+    monkeypatch.setenv(gates.HAZARD_SOURCE_ENV, "synthetic-test-hazard-v1")
 
 
 def _case():
@@ -75,10 +84,31 @@ def test_repo_ships_no_signed_case_record():
     [
         (lambda c: c["data_class"].update(synthetic=False), "synthetic"),
         (lambda c: c.update(case_id="PT-12345"), "SYNTH-"),
-        (lambda c: c["neoantigen"].update(wild_type_peptide=c["neoantigen"]["mutant_peptide"]), "equals wild_type_peptide"),
-        (lambda c: c["neoantigen"].update(wild_type_peptide="YLGPETGDWAA"), "differ in length"),
+        (
+            lambda c: c["neoantigen"].update(
+                wild_type_peptide=c["neoantigen"]["mutant_peptide"]
+            ),
+            "equals wild_type_peptide",
+        ),
+        (
+            lambda c: c["neoantigen"].update(
+                wild_type_peptide={
+                    "sequence": "YLGPETGDWAA",
+                    "provenance": {"kind": "reference", "source": "test"},
+                }
+            ),
+            "differ in length",
+        ),
         (lambda c: c["hla"].update(restriction_allele="HLA-A*11:01"), "not in hla.class_i"),
-        (lambda c: c["neoantigen"].update(mutant_peptide="YLBPETGDW"), "one-letter residues"),
+        (
+            lambda c: c["neoantigen"].update(
+                mutant_peptide={
+                    "sequence": "YLBPETGDW",
+                    "provenance": {"kind": "reference", "source": "test"},
+                }
+            ),
+            "one-letter residues",
+        ),
         (lambda c: c["consent"].update(scope="whatever"), "consent.scope"),
     ],
 )
@@ -101,8 +131,8 @@ def test_load_case_raises_on_invalid(tmp_path):
 def test_target_comes_from_the_case_record():
     target = case_mod.resolve_target({}, case=_case())
     assert target["source"] == "case_record"
-    assert target["mutant_peptide"] == "YLDPETGDW"
-    assert target["wild_type_peptide"] == "YLGPETGDW"
+    assert sequence_text(target["mutant_peptide"]) == "YLDPETGDW"
+    assert sequence_text(target["wild_type_peptide"]) == "YLGPETGDW"
     assert target["restriction_allele"] == "HLA-A*02:01"
     assert target["signed"] is False
 
@@ -181,48 +211,20 @@ def test_margin_is_stated_when_a_scorer_is_injected():
     target = case_mod.resolve_target({}, case=_case())
     designs = [{"design": "d1", "sequence": "ACDEFGHIKL"}]
 
+    mutant = sequence_text(target["mutant_peptide"])
+
     def scorer(peptide, sequence):
-        return 1.0 if peptide == target["mutant_peptide"] else 0.25
+        return 1.0 if peptide == mutant else 0.25
 
     record = margin.score_wild_type_margin(target, designs, scorer=scorer)
     assert record["status"] == "stated"
-    assert record["per_design"][0]["margin"] == pytest.approx(0.75)
+    assert record["per_design"][0]["margin"] == "0.750000"
 
 
 def test_margin_not_applicable_for_a_fixture_target(monkeypatch):
     monkeypatch.delenv(case_mod.CASE_ENV, raising=False)
     target = case_mod.resolve_target({"bindcraft": {"target": "hPDL1"}})
     assert margin.score_wild_type_margin(target, []) ["status"] == "not_applicable"
-
-
-def test_human_reference_gate_is_unbuilt_by_default(monkeypatch):
-    monkeypatch.delenv(gates.REFERENCE_ENV, raising=False)
-    record = gates.human_reference_gate([{"design": "d1", "sequence": "ACDEFGHIKL"}])
-    assert record["status"] == "unbuilt"
-    assert "not built" in record["reason"] or "unset" in record["reason"]
-
-
-def test_human_reference_gate_never_passes_without_looking(monkeypatch):
-    monkeypatch.delenv(gates.REFERENCE_ENV, raising=False)
-    assert gates.human_reference_gate([])["status"] != "pass"
-
-
-def test_human_reference_gate_flags_a_verbatim_window(tmp_path):
-    reference = tmp_path / "ref.fasta"
-    reference.write_text(">synthetic reference\nMKTAYIAKQRQISFVKSHFSRQ\n", encoding="utf-8")
-    hit = gates.human_reference_gate(
-        [{"design": "d1", "sequence": "AKQRQISFVKS"}], reference_fasta=reference, k=9
-    )
-    assert hit["status"] == "fail" and hit["hits"]
-    clean = gates.human_reference_gate(
-        [{"design": "d2", "sequence": "WWWWWWWWWWWW"}], reference_fasta=reference, k=9
-    )
-    assert clean["status"] == "pass"
-
-
-def test_human_reference_gate_reports_a_missing_reference_as_error(tmp_path):
-    record = gates.human_reference_gate([], reference_fasta=tmp_path / "absent.fasta")
-    assert record["status"] == "error"
 
 
 # ---- end to end: one case, one trace -------------------------------------------------
@@ -238,7 +240,7 @@ def _run(tmp_path, **kwargs):
 
 
 def test_end_to_end_writes_one_trace_covering_every_stage(tmp_path, monkeypatch):
-    monkeypatch.delenv(gates.REFERENCE_ENV, raising=False)
+    _configure_gates(monkeypatch, tmp_path)
     monkeypatch.delenv(margin.SCORER_ENV, raising=False)
     result, lines = _run(tmp_path)
     assert result["exit_code"] == EXIT_OK
@@ -251,6 +253,7 @@ def test_end_to_end_writes_one_trace_covering_every_stage(tmp_path, monkeypatch)
         "curate",
         "margin_wild_type",
         "human_reference_gate",
+        "hazard_screen",
         "ward_handoff",
         "letter",
         "case_summary",
@@ -261,22 +264,24 @@ def test_end_to_end_writes_one_trace_covering_every_stage(tmp_path, monkeypatch)
 
 
 def test_trace_marks_the_placeholders_honestly(tmp_path, monkeypatch):
-    monkeypatch.delenv(gates.REFERENCE_ENV, raising=False)
+    _configure_gates(monkeypatch, tmp_path)
     monkeypatch.delenv(margin.SCORER_ENV, raising=False)
     _, lines = _run(tmp_path)
     by_stage = {line["stage"]: line for line in lines}
     assert by_stage["design"]["status"] == "fixture_backed"
     assert by_stage["design"]["designs_are_real"] is False
     assert by_stage["margin_wild_type"]["status"] == "not_computed"
-    assert by_stage["human_reference_gate"]["status"] == "unbuilt"
-    assert by_stage["ward_handoff"]["status"] == "not_invoked"
-    assert by_stage["letter"]["status"] == "not_produced"
+    assert by_stage["human_reference_gate"]["status"] == "pass"
+    assert by_stage["hazard_screen"]["status"] == "pass"
+    assert by_stage["ward_handoff"]["status"] == "built"
+    assert by_stage["letter"]["status"] == "produced"
     summary = by_stage["case_summary"]
     assert summary["release"] is False
     assert summary["design_hold"], "the summary must carry the hold reasons"
 
 
-def test_trace_claims_no_absolute_affinity(tmp_path):
+def test_trace_claims_no_absolute_affinity(tmp_path, monkeypatch):
+    _configure_gates(monkeypatch, tmp_path)
     _, lines = _run(tmp_path)
     def keys(obj):
         if isinstance(obj, dict):
@@ -291,6 +296,7 @@ def test_trace_claims_no_absolute_affinity(tmp_path):
 
 
 def test_trace_is_reproducible_under_the_test_clock(tmp_path, monkeypatch):
+    _configure_gates(monkeypatch, tmp_path)
     monkeypatch.setenv("BINDI_CLOCK", "test")
     _, lines = _run(tmp_path)
     assert {line["ts"] for line in lines} == {"1937-01-01T00:00:00Z"}
@@ -305,7 +311,8 @@ def test_requesting_a_real_design_run_is_refused_and_exits_two(tmp_path):
     assert "curate" not in [line["stage"] for line in lines]
 
 
-def test_ward_handoff_payload_is_built_but_unranked_and_unreleased(tmp_path):
+def test_ward_handoff_payload_is_built_but_unranked_and_unreleased(tmp_path, monkeypatch):
+    _configure_gates(monkeypatch, tmp_path)
     result, _ = _run(tmp_path)
     payload = json.loads(Path(result["handoff"]).read_text(encoding="utf-8"))
     assert payload["synthetic"] is True

@@ -10,6 +10,8 @@ from pathlib import Path
 from . import VERSION
 from .case import CaseError, DesignHold
 from .curate import curate
+from . import design_engine
+from .case import load_case
 from .e2e import EXIT_CASE_ERROR, EXIT_HOLD, case_run
 from .generate import generate
 from .policy import load_policy, policy_from_nl_stub
@@ -72,7 +74,59 @@ def main(argv: list[str] | None = None) -> int:
         help="Request a real design run. Refused while the hold is in force (exit 2).",
     )
     e2e.add_argument("--human-reference-fasta", help="Reference FASTA for the human-reference gate")
+    e2e.add_argument("--human-reference-source", help="Version/source label for the human reference")
+    e2e.add_argument("--hazard-screen-fasta", help="Reference FASTA for the hazard screen gate")
+    e2e.add_argument("--hazard-screen-source", help="Version/source label for the hazard screen")
     e2e.add_argument("--margin-scorer", help="module:function scorer for the wild-type margin")
+    e2e.add_argument(
+        "--sequence-design",
+        action="store_true",
+        help="Run the v1 sequence-level designer (signed case required; not structure-validated).",
+    )
+    e2e.add_argument(
+        "--design-seed",
+        type=int,
+        default=42,
+        help="RNG seed for --sequence-design (default 42).",
+    )
+    e2e.add_argument(
+        "--design-scorer",
+        default=design_engine.DEFAULT_SCORER_ID,
+        choices=sorted(design_engine.SCORER_REGISTRY),
+        help="Sequence design scorer id (default blosum_position_v2).",
+    )
+
+    noise = sub.add_parser(
+        "sequence-design-repeat-noise",
+        help="Measure repeat-run score spread for PAIR-HARD and PAIR-EASY on a signed case.",
+    )
+    noise.add_argument(
+        "case",
+        help="Signed immunology case JSON with benchmark_pairs (PAIR-HARD, PAIR-EASY).",
+    )
+    noise.add_argument(
+        "--repeats",
+        type=int,
+        default=20,
+        help="Independent designer seeds per pair (default 20).",
+    )
+    noise.add_argument(
+        "--seed-start",
+        type=int,
+        default=1000,
+        help="First RNG seed for repeat runs (default 1000).",
+    )
+    noise.add_argument(
+        "--scorer",
+        default=design_engine.DEFAULT_SCORER_ID,
+        choices=sorted(design_engine.SCORER_REGISTRY),
+        help="Scorer id for repeat-noise measurement (default blosum_position_v2).",
+    )
+    noise.add_argument(
+        "--output",
+        type=Path,
+        help="Evidence JSON path (default depends on --scorer).",
+    )
 
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
 
@@ -87,6 +141,22 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     command = args.command
+
+    if command == "sequence-design-repeat-noise":
+        case = load_case(args.case)
+        if not case.get("signature", {}).get("signed"):
+            raise SystemExit("case record must be signed for repeat-noise measurement")
+        output = args.output or design_engine.default_evidence_path(args.scorer)
+        report = design_engine.write_repeat_noise_evidence(
+            case,
+            output,
+            repeats=args.repeats,
+            seed_start=args.seed_start,
+            scorer_id=args.scorer,
+        )
+        json.dump(report, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
 
     if command == "recruit":
         json.dump(resource_descriptor(), sys.stdout, indent=2)
@@ -114,7 +184,13 @@ def main(argv: list[str] | None = None) -> int:
                 trace_path=args.trace,
                 allow_design=args.design,
                 reference_fasta=args.human_reference_fasta,
+                reference_source=args.human_reference_source,
+                hazard_fasta=args.hazard_screen_fasta,
+                hazard_source=args.hazard_screen_source,
                 margin_scorer_spec=args.margin_scorer,
+                sequence_design=args.sequence_design,
+                design_seed=args.design_seed,
+                design_scorer_id=args.design_scorer,
             )
         except DesignHold as exc:
             json.dump({"error": "design_hold", "detail": str(exc)}, sys.stdout, indent=2)

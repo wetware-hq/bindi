@@ -20,6 +20,8 @@ import importlib
 import os
 from typing import Any, Callable
 
+from .provenance import sequence_text
+
 SCORER_ENV = "BINDI_MARGIN_SCORER"
 
 UNITS = (
@@ -54,8 +56,8 @@ def score_wild_type_margin(
 ) -> dict[str, Any]:
     """Return the margin record for a case. Honest about not being computed."""
     designs = designs or []
-    mutant = target.get("mutant_peptide")
-    wild = target.get("wild_type_peptide")
+    mutant = sequence_text(target.get("mutant_peptide")) or target.get("mutant_peptide")
+    wild = sequence_text(target.get("wild_type_peptide")) or target.get("wild_type_peptide")
     record: dict[str, Any] = {
         "rule": (
             "margin = mutant_complex_score - wild_type_complex_score, stated per design; a "
@@ -93,9 +95,9 @@ def score_wild_type_margin(
         record["per_design"].append(
             {
                 "design": design.get("design"),
-                "mutant_complex_score": mutant_score,
-                "wild_type_complex_score": wild_score,
-                "margin": round(mutant_score - wild_score, 6),
+                "mutant_complex_score": f"{mutant_score:.6f}",
+                "wild_type_complex_score": f"{wild_score:.6f}",
+                "margin": f"{mutant_score - wild_score:.6f}",
             }
         )
     record["status"] = "stated"

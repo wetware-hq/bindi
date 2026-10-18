@@ -51,8 +51,8 @@
       "properties": {
         "gene": {"type": "string", "minLength": 1},
         "variant": {"type": "string", "minLength": 1, "description": "e.g. p.G12D (HGVS protein)"},
-        "mutant_peptide": {"type": "string", "pattern": "^[ACDEFGHIKLMNPQRSTVWY]{8,15}$"},
-        "wild_type_peptide": {"type": "string", "pattern": "^[ACDEFGHIKLMNPQRSTVWY]{8,15}$"},
+        "mutant_peptide": {"$ref": "sequence_field.v1.schema.json"},
+        "wild_type_peptide": {"$ref": "sequence_field.v1.schema.json"},
         "mutated_position": {"type": "integer", "minimum": 1},
         "source": {"type": "string", "description": "How the variant was called. 'invented' for synthetic cases."}
       }

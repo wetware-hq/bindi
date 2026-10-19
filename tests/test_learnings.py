@@ -72,6 +72,38 @@ def test_provenance_present(tmp_path):
     assert "experimental" in prov.get("statement", "").lower()
 
 
+def test_structures_not_run_recorded_when_none_copied(tmp_path):
+    m = _gallery(tmp_path)
+    structures = m.get("structures")
+    assert structures is not None
+    assert structures.get("copied") == 0
+    assert structures.get("status") == "not_run"
+    reason = structures.get("reason")
+    assert reason and reason.strip(), "structures.reason must be recorded when nothing was copied"
+
+
+def test_structures_copied_status_when_mm_cif_present(tmp_path):
+    project = tmp_path / "results" / "with_cif"
+    ranked = project / "3_Ranked"
+    ranked.mkdir(parents=True)
+    shutil.copy(FIXTURES / "sample_ranked.csv", ranked / "!_Ranked.csv")
+    cif = project / "pdl1_binder_seq1_model.cif"
+    cif.write_text("data_demo\n", encoding="utf-8")
+    curate(
+        {
+            "bindcraft": {"project_folder": str(project)},
+            "curation": {"top_n": 1, "rank_on": ["i_pTM"]},
+            "gallery": "gallery",
+        },
+        workdir=tmp_path,
+    )
+    m = json.loads((tmp_path / "gallery" / "index.json").read_text(encoding="utf-8"))
+    structures = m["structures"]
+    assert structures["copied"] == 1
+    assert structures["status"] == "copied"
+    assert "reason" not in structures
+
+
 # --- Learning 3: BENCHMARK DISCIPLINE ------------------------------------------
 
 def test_benchmark_record_present_and_unchecked(tmp_path):
@@ -89,18 +121,18 @@ def test_benchmark_record_present_and_unchecked(tmp_path):
 
 def test_deployable_path_rejects_evaluation_only_tools():
     with pytest.raises(data.LicenceTierError):
-        data.assert_deployable(["BindCraft2", "FEP+"])
+        data.assert_deployable(["BoltzGen", "FEP+"])
     with pytest.raises(data.LicenceTierError):
         data.assert_deployable(["PyRosetta"])
 
 
 def test_deployable_path_accepts_deployable_tools():
-    data.assert_deployable(["BindCraft2"])  # must not raise
+    data.assert_deployable(["BoltzGen"])  # must not raise
 
 
 def test_tool_tiers_are_cited():
     tiers = data.tool_tiers()
-    assert "BindCraft2" in tiers
+    assert "BoltzGen" in tiers
     for name, entry in tiers.items():
         assert entry.get("tier") in {"deployable", "evaluation_only"}, name
         assert entry.get("licence"), name
@@ -128,9 +160,8 @@ def test_default_run_emits_no_ensemble_field_anywhere(tmp_path):
 
 
 def test_default_run_suppresses_rank_on_unconfirmed_metric(tmp_path):
-    # Default rank_on is i_pDAE, whose direction is not confirmed, so the default (ensemble-off)
-    # gallery is shown unordered with the rank suppressed rather than ordered worst-first.
-    m = _gallery(tmp_path, top_n=3)
+    # Legacy rank_on i_pDAE has no confirmed direction; gallery is unordered with rank suppressed.
+    m = _gallery(tmp_path, top_n=3, curation={"rank_on": ["i_pDAE"]})
     assert m.get("rank_suppressed") is True
     assert m.get("ordering") == "unordered"
     assert all("rank" not in e for e in m["entries"])
@@ -144,7 +175,7 @@ def test_default_run_suppresses_rank_on_unconfirmed_metric(tmp_path):
 
 
 def test_enabled_path_emits_full_ensemble(tmp_path):
-    m = _gallery(tmp_path, use_ensemble=True)
+    m = _gallery(tmp_path, use_ensemble=True, curation={"universes": ["i_pDAE", "i_pTM"]})
     ens = m["ensemble"]
     assert ens["available"] is True
     assert ens["universes"] == ["i_pDAE", "i_pTM"]
@@ -161,7 +192,7 @@ def test_enabled_via_policy_flag(tmp_path):
 
 
 def test_enabled_path_reorders_by_consensus(tmp_path):
-    m = _gallery(tmp_path, use_ensemble=True)
+    m = _gallery(tmp_path, use_ensemble=True, curation={"universes": ["i_pDAE", "i_pTM"]})
     # steady_b wins consensus (worst_rank 2 vs 3 for the contested pair).
     assert m["entries"][0]["design"] == "pdl1_steady_b"
 

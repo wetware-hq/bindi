@@ -1,11 +1,10 @@
-# Worker image: bindi orchestration on top of a BindCraft2 runtime.
-# Build BindCraft2 first (see https://github.com/PacesaLab/BindCraft2/containers),
-# tag it bindcraft:local, then:
+# Worker image: bindi orchestration on top of a BoltzGen runtime.
+#
+# Option A — use a pre-built BoltzGen image that provides `boltzgen` on PATH:
 #   docker build -f containers/Dockerfile -t bindi:local .
 #
-# Or set BASE_IMAGE to any image that provides `bindcraft` on PATH.
-
-ARG BASE_IMAGE=bindcraft:local
+# Option B — set BASE_IMAGE to any Python image and install BoltzGen via pip (GPU host required).
+ARG BASE_IMAGE=python:3.12-slim-bookworm
 FROM ${BASE_IMAGE}
 
 # Pinned aligners (Chief Scientist thresholds are sensitive at identity boundaries).
@@ -36,14 +35,19 @@ ENV BINDI_MMSEQS_CMD=mmseqs
 ENV BINDI_BLASTP_CMD=blastp
 ENV BINDI_MAKEBLASTDB_CMD=makeblastdb
 
-WORKDIR /work
+RUN pip install --no-cache-dir "boltzgen>=0.3.2"
 
+WORKDIR /opt/bindi
 COPY pyproject.toml README.md LICENSE /opt/bindi/
 COPY src /opt/bindi/src
 COPY campaigns /opt/bindi/campaigns
-
+COPY fixtures /opt/bindi/fixtures
 RUN pip install --no-cache-dir /opt/bindi
 
-ENV BINDCRAFT_CMD=bindcraft
+ENV BOLTZGEN_CMD=boltzgen
+# BoltzGen model weights download on first run (~6 GB Boltz + optional ESMFold2 cache).
+ENV BOLTZ_CACHE=/cache
+
+WORKDIR /work
 ENTRYPOINT ["bindi"]
-CMD ["recruit"]
+CMD ["--help"]

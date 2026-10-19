@@ -1,4 +1,4 @@
-"""Build a ranked gallery directory from a BindCraft2 campaign folder."""
+"""Build a ranked gallery directory from a BoltzGen campaign folder."""
 
 from __future__ import annotations
 
@@ -6,23 +6,30 @@ import csv
 import json
 import shutil
 import statistics
-import subprocess
 from pathlib import Path
 from typing import Any, Iterable
 
 from . import data, ensemble
-from .policy import normalize_policy, resolve_bindcraft_campaign
+from . import boltz as boltz_mod
+from .policy import normalize_policy, resolve_boltz_campaign
 
 GALLERY_SCHEMA = "bindi.gallery.v1"
-RANKED_NAME = "!_Ranked.csv"
-RANK_STAGE = Path("3_Ranked")
 
 # bindi's only generator path. Must stay deployable (see src/bindi/data/tool_tiers.toml).
-DEPLOYABLE_TOOLS = ["BindCraft2"]
+DEPLOYABLE_TOOLS = ["BoltzGen"]
 
 RELATIVE_CLAIM = (
     "Relative ranking among the designs in this campaign only. No absolute affinity, "
     "Kd/Ki/IC50, or kcal/mol value is predicted or implied; ranking is never a safety claim."
+)
+FIXTURE_PATH_STATEMENT = (
+    "This run used bundled fixtures with no design compute: it exercises record-keeping "
+    "and curation layout only, not binding chemistry. No design in this gallery has been "
+    "shown to bind."
+)
+STRUCTURES_NOT_RUN_REASON = (
+    "No structure files were copied into the gallery (none were found under the campaign "
+    "folder for the selected designs)."
 )
 PROVENANCE_STATEMENT = (
     "In-silico hypotheses until confirmed experimentally (affinity, specificity, "
@@ -35,11 +42,11 @@ ENSEMBLE_BASIS = (
     "(data: https://github.com/schrodinger/protein-fep-benchmark)."
 )
 
-# The rank column is a pass-signal ordering, not potency. BindCraft's authors state their
-# interface metric predicts whether a design binds, not how tightly it binds.
+# The rank column is a pass-signal ordering, not potency. Boltz-2 confidence scores (ipTM etc.)
+# reflect predicted complex quality, not measured binding affinity.
 RANK_MEANING = (
-    "Rank is a pass-signal ordering (BindCraft's interface metric predicts whether a design "
-    "binds, not how tightly), not an affinity or potency ordering."
+    "Rank is a pass-signal ordering from Boltz-2/BoltzGen confidence metrics (e.g. design_to_target_iptm), "
+    "not an affinity or potency ordering."
 )
 
 # ---- Ranking direction registry -------------------------------------------------
@@ -48,8 +55,26 @@ RANK_MEANING = (
 # interface aligned-error metric is `i_pAE`, normalised to 0-1 and LOWER-better
 # (default accept filter Average_i_pAE < 0.35; Pacesa et al. 2025,
 # doi:10.1038/s41586-025-09429-6).
-HIGHER_BETTER_CONFIRMED = {"i_pTM", "pTM", "pLDDT", "Interface_BuriedArea", "Interface_Residues"}
-LOWER_BETTER_CONFIRMED = {"i_pAE", "pAE"}
+HIGHER_BETTER_CONFIRMED = {
+    "i_pTM",
+    "pTM",
+    "pLDDT",
+    "Interface_BuriedArea",
+    "Interface_Residues",
+    "design_to_target_iptm",
+    "design_iptm",
+    "design_iiptm",
+    "design_ptm",
+    "design_plddt",
+    "quality_score",
+}
+LOWER_BETTER_CONFIRMED = {
+    "i_pAE",
+    "pAE",
+    "min_design_to_target_pae",
+    "design_ipsae_min",
+    "design_to_target_ipsae",
+}
 
 # `i_pDAE` has NO confirmed direction. It is not a BindCraft output column (that is
 # `i_pAE`), bindi computes it nowhere, and bindi's own text calls it an "interface
@@ -155,34 +180,7 @@ def _rank_rows(
 
 
 def _locate_ranked_table(project_folder: Path) -> Path | None:
-    ranked = project_folder / RANK_STAGE / RANKED_NAME
-    if ranked.exists():
-        return ranked
-    legacy = project_folder / "ranked.csv"
-    if legacy.exists():
-        return legacy
-    return None
-
-
-def _maybe_rerank_with_bindcraft(
-    project_folder: Path,
-    rank_on: list[str],
-    bindcraft_cmd: str,
-) -> Path | None:
-    if not rank_on:
-        return _locate_ranked_table(project_folder)
-    metric = rank_on[0]
-    cmd = [bindcraft_cmd, "rank", str(project_folder), "--on", metric]
-    for extra in rank_on[1:]:
-        cmd.extend(["--on", extra])
-    try:
-        subprocess.run(cmd, check=False, capture_output=True)
-    except OSError:
-        return _locate_ranked_table(project_folder)
-    custom = project_folder / RANK_STAGE / f"ranked_by_{metric}.csv"
-    if custom.exists():
-        return custom
-    return _locate_ranked_table(project_folder)
+    return boltz_mod.locate_ranked_table(project_folder)
 
 
 def _select_universes(rows: list[dict[str, str]], curation: dict[str, Any]) -> list[str]:
@@ -211,17 +209,29 @@ def _disagreement_summary(summary: dict[str, dict[str, Any]]) -> dict[str, Any] 
     }
 
 
-def _reproducibility(bindcraft: dict[str, Any]) -> dict[str, Any]:
+def _reproducibility(boltz: dict[str, Any]) -> dict[str, Any]:
     """Reproducible-given-seed, never 'deterministic': record seed and trajectory count
     where the campaign provides them."""
-    trajectories = bindcraft.get("number_of_trajectories")
+    trajectories = boltz.get("number_of_trajectories")
     if trajectories is None:
-        trajectories = bindcraft.get("trajectories")
+        trajectories = boltz.get("trajectories")
+    if trajectories is None:
+        trajectories = boltz.get("num_designs")
     return {
         "model": "reproducible-given-seed",
-        "seed": bindcraft.get("seed"),
+        "seed": boltz.get("seed"),
         "trajectories": trajectories,
     }
+
+
+def _structures_manifest(copied_count: int) -> dict[str, Any]:
+    block: dict[str, Any] = {"copied": copied_count}
+    if copied_count:
+        block["status"] = "copied"
+    else:
+        block["status"] = "not_run"
+        block["reason"] = STRUCTURES_NOT_RUN_REASON
+    return block
 
 
 def curate(
@@ -230,16 +240,22 @@ def curate(
     project_folder: Path | str | None = None,
     workdir: Path | None = None,
     use_bindcraft_rank: bool = False,
-    bindcraft_cmd: str = "bindcraft",
+    use_boltz_rank: bool = False,
     use_ensemble: bool = False,
+    fixture_path: bool = False,
 ) -> dict[str, Any]:
     policy = normalize_policy(policy)
     base = workdir or Path.cwd()
-    bindcraft, gallery_path = resolve_bindcraft_campaign(policy, workdir=base)
+    boltz, gallery_path = resolve_boltz_campaign(policy, workdir=base)
     curation = policy.get("curation") or {}
-    rank_on = list(curation.get("rank_on") or ["i_pDAE"])
+    rank_on = list(curation.get("rank_on") or ["design_to_target_iptm"])
     unconfirmed = _unconfirmed_metrics(rank_on)
-    top_n = int(curation.get("top_n") or bindcraft.get("number_of_final_designs") or 10)
+    top_n = int(
+        curation.get("top_n")
+        or boltz.get("budget")
+        or boltz.get("number_of_final_designs")
+        or 10
+    )
 
     # Ensemble is OFF by default: it ships as code but is unvalidated, so it writes nothing
     # to the manifest and does not reorder unless explicitly enabled.
@@ -252,15 +268,18 @@ def curate(
     # Deployable-path licence guard: nothing evaluation_only may be a dependency here.
     data.assert_deployable(DEPLOYABLE_TOOLS)
 
-    campaign_root = Path(project_folder or bindcraft["project_folder"])
-    if use_bindcraft_rank:
-        ranked_csv = _maybe_rerank_with_bindcraft(campaign_root, rank_on, bindcraft_cmd)
+    campaign_root = Path(project_folder or boltz["project_folder"])
+    rerank = use_boltz_rank or use_bindcraft_rank
+    if rerank:
+        ranked_csv = boltz_mod.maybe_rerank_with_boltzgen(
+            boltz, campaign_root, rank_on, workdir=base
+        )
     else:
         ranked_csv = _locate_ranked_table(campaign_root)
     if ranked_csv is None:
         raise FileNotFoundError(f"no ranked table under {campaign_root}")
 
-    rows = _read_csv(ranked_csv)
+    rows = [boltz_mod.normalize_row(row) for row in _read_csv(ranked_csv)]
     if rank_suppressed:
         # Physician's ruling for an unconfirmed direction: show candidates unordered
         # with the rank column suppressed. Drop any upstream rank and present in a
@@ -315,7 +334,19 @@ def curate(
     for row in selected:
         design = row.get("design") or row.get("Design") or ""
         score = {metric: row.get(metric) for metric in rank_on if metric in row}
-        structure_sources = list(campaign_root.glob(f"**/{design}*.cif"))
+        file_name = row.get("file_name") or ""
+        structure_sources: list[Path] = []
+        if file_name:
+            for sub in (
+                boltz_mod.REFOLD_CIF,
+                Path("intermediate_designs_inverse_folded"),
+                Path("."),
+            ):
+                candidate = campaign_root / sub / file_name
+                if candidate.exists():
+                    structure_sources.append(candidate)
+        if not structure_sources and design:
+            structure_sources = list(campaign_root.glob(f"**/{design}*.cif"))
         structure_rel = None
         if structure_sources:
             source = structure_sources[0]
@@ -362,21 +393,23 @@ def curate(
         "disclosures": list(DISCLOSURES),
         "release": False,
         "not_a_release": NOT_A_RELEASE_REASON,
-        "reproducibility": _reproducibility(bindcraft),
+        "reproducibility": _reproducibility(boltz),
         "provenance": provenance,
         "benchmark": data.benchmark_record(),
         "tooling": {"path": "deployable", "tools": list(DEPLOYABLE_TOOLS)},
         "entries": entries,
+        "structures": _structures_manifest(len(copied)),
     }
+    if fixture_path:
+        manifest["fixture_path_statement"] = FIXTURE_PATH_STATEMENT
     if rank_suppressed:
         manifest["rank_meaning"] = RANK_SUPPRESSED_MEANING
         manifest["rank_suppressed"] = True
         manifest["ordering"] = "unordered"
         manifest["rank_suppressed_reason"] = (
             "Ranking requested on " + ", ".join(unconfirmed) + ", whose direction is "
-            "unconfirmed (name reads as interface aligned error, lower-better; bindi's own "
-            "text and fixtures treat it as a higher-better confidence metric; and it is not a "
-            "BindCraft output column, the upstream interface aligned-error column being i_pAE). "
+            "unconfirmed (legacy bindi metric from the BindCraft era; BoltzGen exposes "
+            "design_to_target_iptm and min_design_to_target_pae instead). "
             "Candidates are shown unordered rather than ranked on a direction the code cannot justify."
         )
     if ensemble_block is not None:

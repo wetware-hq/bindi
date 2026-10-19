@@ -1,15 +1,19 @@
 {
   "schema": "bindi.policy.v1",
   "query": "De novo miniprotein binders against human PD-L1 for blocking the PD-1 interaction.",
-  "bindcraft": {
+  "boltz": {
     "target": "hPDL1",
     "modality": "binder",
     "campaign_name": "pdl1",
+    "design_spec": "campaigns/pdl1_miniprotein.yaml",
+    "protocol": "protein-anything",
+    "num_designs": 500,
+    "budget": 10,
     "number_of_final_designs": 10,
     "project_folder": "results/pdl1"
   },
   "curation": {
-    "rank_on": ["i_pDAE"],
+    "rank_on": ["design_to_target_iptm"],
     "top_n": 10
   },
   "gallery": "gallery"

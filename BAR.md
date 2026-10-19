@@ -8,7 +8,7 @@ What a green means in **bindi 🐨**, and what it does not. A green here is not 
 
 ```bash
 pip install -e .     # or: uv pip install -e .
-pytest               # 53 tests
+pytest               # 54 tests
 bindi run campaigns/pdl1.json --dry-run   # curation smoke-test on fixtures, no GPU
 ```
 
@@ -27,12 +27,12 @@ bindi run campaigns/pdl1.json --dry-run   # curation smoke-test on fixtures, no 
 - **Structures recorded** (`test_structures_not_run_recorded_when_none_copied`, `test_structures_copied_status_when_mm_cif_present`) — `structures.copied` is explicit; when zero, `status` is `not_run` with a `reason`, not silence.
 - **Ensemble off by default** (`test_default_run_emits_no_ensemble_field_anywhere`, `test_default_run_does_not_reorder_by_ensemble`, `test_enabled_path_emits_full_ensemble`, `test_enabled_via_policy_flag`, `test_enabled_path_reorders_by_consensus`) — by default no `ensemble` field is written and no reorder happens; enabling it explicitly restores the full block, and both paths are tested.
 - **Ensemble internals** (`tests/test_ensemble.py`) — ranking, disagreement summary, triage, and not-comparable handling (fewer than two universes, missing/blank/non-numeric metric).
-- **Policy & pipeline** (`test_bare_bindcraft_json_normalizes`, `test_resolve_paths`, `test_dry_run_pipeline_builds_gallery`, `test_curate_existing_campaign`) — bare BindCraft2 JSON normalizes, paths resolve, and the dry-run and re-curate paths build a `bindi.gallery.v1` gallery.
+- **Policy & pipeline** (`test_bare_bindcraft_json_normalizes`, `test_legacy_bindcraft_key_migrates_to_boltz`, `test_resolve_paths`, `test_dry_run_pipeline_builds_gallery`, `test_curate_existing_campaign`) — legacy campaign JSON normalizes to `boltz`, paths resolve, and the dry-run and re-curate paths build a `bindi.gallery.v1` gallery.
 
 ## What a green does NOT cover
 
 - **The ensemble heuristic is unvalidated.** It ships **off by default** and is a ranking heuristic, never a safety claim; its benchmark status is `unchecked`. A green does not say it ranks correctly.
-- **Binding, structural, or experimental validity.** `rank` is a pass signal from BindCraft's interface metric, not measured affinity or potency. A gallery is a hypothesis until confirmed in the lab.
+- **Binding, structural, or experimental validity.** `rank` is a pass signal from Boltz-2 confidence metrics, not measured affinity or potency. A gallery is a hypothesis until confirmed in the lab.
 - **No hazard screen** has been applied to any gallery; `release` is always `false` and `not_a_release` names the unmet condition.
 - **Identity and sign-off gates are specified but unbuilt.** The disclosure lines say so; a green does not mean they exist.
 - **Not a release.** The gallery manifest is marked `not_a_release`; a green is a code check on invented fixtures, not evidence of clinical safety.

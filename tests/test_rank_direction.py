@@ -1,11 +1,10 @@
 """Pin the ranking direction so it cannot silently flip, and pin the suppression branch
 for a metric whose direction is not confirmed.
 
-Context: `i_pDAE` is bindi's default `rank_on`. Its direction cannot be confirmed — the
-name reads as interface predicted aligned error (lower-better), while bindi's own text and
-fixtures treat it as a higher-better confidence metric, and it is not a BindCraft output
-column (the upstream interface aligned-error column is `i_pAE`). So the gallery must be
-shown unordered with the rank suppressed, never ranked on a guessed sign.
+Context: `i_pDAE` is a legacy bindi `rank_on` metric from the BindCraft era. Its direction
+cannot be confirmed, so the gallery must be shown unordered with the rank suppressed,
+never ranked on a guessed sign. Production campaigns should rank on BoltzGen columns such
+as `design_to_target_iptm` instead.
 """
 import csv
 import json
@@ -27,6 +26,7 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 def test_confirmed_directions_are_pinned():
     # Confidence scores: higher is better (sort sign -1).
     assert _direction("i_pTM") == -1
+    assert _direction("design_to_target_iptm") == -1
     assert _direction("pTM") == -1
     assert _direction("pLDDT") == -1
     # Interface aligned error (upstream `i_pAE`, normalised 0-1): lower is better (sign +1).
@@ -61,7 +61,7 @@ def test_gallery_suppresses_rank_when_ranking_on_i_pdae():
             (FIXTURES / "sample_ranked_disagree.csv").read_text(encoding="utf-8"), encoding="utf-8"
         )
         policy = {
-            "bindcraft": {"project_folder": str(proj)},
+            "boltz": {"project_folder": str(proj)},
             "curation": {"rank_on": ["i_pDAE"], "top_n": 10},
             "gallery": "gallery",
         }

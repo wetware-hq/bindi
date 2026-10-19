@@ -1,21 +1,22 @@
-"""Invoke BindCraft2 design for a resolved campaign."""
+"""Invoke BoltzGen design for a resolved campaign."""
 
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
 
-from .policy import resolve_bindcraft_campaign
-
-RANKED_REL = Path("3_Ranked") / "!_Ranked.csv"
-
-
-def bindcraft_executable() -> str:
-    return os.environ.get("BINDCRAFT_CMD", "bindcraft")
+from .boltz import (
+    LEGACY_RANK_STAGE,
+    LEGACY_RANKED_NAME,
+    RANKED_METRICS,
+    RANKED_STAGE,
+    build_boltzgen_command,
+    resolve_design_spec_path,
+)
+from .policy import resolve_boltz_campaign
 
 
 def generate(
@@ -27,12 +28,12 @@ def generate(
 ) -> dict[str, Any]:
     base = workdir or Path.cwd()
     base.mkdir(parents=True, exist_ok=True)
-    bindcraft, gallery_path = resolve_bindcraft_campaign(policy, workdir=base)
+    boltz, gallery_path = resolve_boltz_campaign(policy, workdir=base)
 
-    campaign_dir = Path(bindcraft["project_folder"])
+    campaign_dir = Path(boltz["project_folder"])
     campaign_dir.mkdir(parents=True, exist_ok=True)
     campaign_file = campaign_dir / "campaign.json"
-    campaign_file.write_text(json.dumps(bindcraft, indent=2) + "\n", encoding="utf-8")
+    campaign_file.write_text(json.dumps(boltz, indent=2) + "\n", encoding="utf-8")
 
     if dry_run:
         _write_dry_run_outputs(campaign_dir)
@@ -43,31 +44,36 @@ def generate(
             "gallery": str(gallery_path),
         }
 
-    cmd = [bindcraft_executable(), "design", str(campaign_file)]
-    if extra_args:
-        cmd.extend(extra_args)
+    design_spec = resolve_design_spec_path(boltz, base)
+    cmd = build_boltzgen_command(boltz, workdir=base, design_spec=design_spec, extra_args=extra_args)
     completed = subprocess.run(cmd, cwd=base, check=False)
     if completed.returncode != 0:
-        raise RuntimeError(f"bindcraft design failed with exit code {completed.returncode}")
+        raise RuntimeError(f"boltzgen run failed with exit code {completed.returncode}")
 
     return {
         "status": "completed",
         "campaign_file": str(campaign_file),
         "project_folder": str(campaign_dir),
         "gallery": str(gallery_path),
+        "design_spec": str(design_spec),
     }
 
 
 def _write_dry_run_outputs(campaign_dir: Path) -> None:
-    ranked_dir = campaign_dir / "3_Ranked"
-    ranked_dir.mkdir(parents=True, exist_ok=True)
     fixture = Path(__file__).resolve().parents[2] / "fixtures" / "sample_ranked.csv"
+    text = fixture.read_text(encoding="utf-8") if fixture.exists() else (
+        "design,rank,design_to_target_iptm,Binder_Sequence\n"
+        "demo_seq1,1,0.72,ACDEFGHIKLMNPQRSTVWY\n"
+        "demo_seq2,2,0.68,ACDEFGHIKLMNPQRSTVWYAC\n"
+    )
+    # BoltzGen layout
+    ranked_dir = campaign_dir / RANKED_STAGE
+    ranked_dir.mkdir(parents=True, exist_ok=True)
+    (ranked_dir / RANKED_METRICS).write_text(text, encoding="utf-8")
+    # Legacy layout (older campaigns / fixtures)
+    legacy_dir = campaign_dir / LEGACY_RANK_STAGE
+    legacy_dir.mkdir(parents=True, exist_ok=True)
     if fixture.exists():
-        shutil.copy(fixture, ranked_dir / "!_Ranked.csv")
+        shutil.copy(fixture, legacy_dir / LEGACY_RANKED_NAME)
     else:
-        (ranked_dir / "!_Ranked.csv").write_text(
-            "design,rank,i_pDAE,Binder_Sequence\n"
-            "demo_seq1,1,0.72,ACDEFGHIKLMNPQRSTVWY\n"
-            "demo_seq2,2,0.68,ACDEFGHIKLMNPQRSTVWYAC\n",
-            encoding="utf-8",
-        )
+        (legacy_dir / LEGACY_RANKED_NAME).write_text(text, encoding="utf-8")

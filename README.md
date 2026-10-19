@@ -15,15 +15,17 @@ Checkpoint inhibitors, targeted biologics, and related modalities need molecules
 | **campaign** | input | policy | `bindi.policy.v1` |
 | **gallery** | output | directory | `bindi.gallery.v1` |
 
-The **campaign** specifies the target, binder modality, number of designs, BindCraft2 project paths, and ranking rules. It is usually filled from natural-language intent and should be reviewed before any GPU job. The **gallery** is a ranked, scored shortlist with a manifest and structure files for laboratory follow-up.
+The **campaign** specifies the target, binder modality, BoltzGen design spec, output paths, and ranking rules. It is usually filled from natural-language intent and should be reviewed before any GPU job. The **gallery** is a ranked, scored shortlist with a manifest and structure files for laboratory follow-up.
 
-The descriptor emitted by `bindi recruit` is defined in [src/bindi/resource.py](src/bindi/resource.py). The repository includes `containers/Dockerfile` to build a worker image whose entrypoint is `bindi` and whose base provides BindCraft2 as `bindcraft:local`.
+The descriptor emitted by `bindi recruit` is defined in [src/bindi/resource.py](src/bindi/resource.py). The repository includes `containers/Dockerfile` to build a worker image whose entrypoint is `bindi` and that installs [BoltzGen](https://github.com/HannesStark/boltzgen) (`boltzgen` on `PATH`).
 
 ## Workflow
 
-**bindi 🐨** orchestrates [BindCraft2](https://github.com/PacesaLab/BindCraft2). **Generate** (`bindi generate`) calls `bindcraft design` using the policy’s `bindcraft` block and requires `bindcraft` on `PATH` (or `BINDCRAFT_CMD`) and a GPU for production runs. **Curate** (`bindi curate`) reads output under `project_folder`, applies `curation.rank_on` and `curation.top_n` (default ranking uses the interface confidence metric *i_pDAE*; bindi reports a relative ranking, not an energy), and writes the gallery path named in the policy.
+**bindi 🐨** orchestrates [BoltzGen](https://github.com/HannesStark/boltzgen) (Boltz-1 diffusion design, Boltz-2 refolding and confidence). **Generate** (`bindi generate`) calls `boltzgen run` using the policy’s `boltz` block (design-spec YAML, protocol, `num_designs`, `budget`) and requires `boltzgen` on `PATH` (or `BOLTZGEN_CMD`) and a GPU for production runs. **Curate** (`bindi curate`) reads metrics under `project_folder` (typically `final_ranked_designs/all_designs_metrics.csv`), applies `curation.rank_on` and `curation.top_n` (default ranking uses Boltz-2 interface confidence `design_to_target_iptm`; bindi reports a relative ranking, not an energy), and writes the gallery path named in the policy.
 
-Campaigns conform to `bindi.policy.v1`, a thin wrapper around BindCraft2 JSON plus curation metadata; bare BindCraft2 campaign files are normalized automatically. The shipped example `campaigns/pdl1.json` targets human PD-L1. `bindi stub` can draft a policy from intent, but that draft must be edited before production. `bindi run <policy> --dry-run` smoke-tests curation on fixtures without a GPU and does not replace binding or structural validation.
+Before a production PD-L1 run, fetch campaign structures: `campaigns/fetch_targets.sh`.
+
+Campaigns conform to `bindi.policy.v1`, a thin wrapper around BoltzGen parameters plus curation metadata; legacy `bindcraft` keys and bare BindCraft-style JSON are migrated automatically. The shipped example `campaigns/pdl1.json` targets human PD-L1 via `campaigns/pdl1_miniprotein.yaml`. `bindi stub` can draft a policy from intent, but that draft must be edited before production. `bindi run <policy> --dry-run` smoke-tests curation on fixtures without a GPU and does not replace binding or structural validation.
 
 ## Gallery
 
@@ -33,9 +35,9 @@ Each gallery follows `bindi.gallery.v1` and contains `index.json` (manifest, ran
 
 bindi emits a **relative ranking among the designs in one campaign** and never a predicted absolute affinity or kcal/mol value. This follows the protein-FEP benchmark of Sampson et al. (*J Mol Biol* 436, 168640, 2024; [data](https://github.com/schrodinger/protein-fep-benchmark)): relative binding free energies between close mutants are predictable where single-structure absolute affinity is not. The manifest carries this as an explicit `claim` field, and a test fails if any manifest or score key reads like an absolute affinity. **Ranking is never a safety claim.**
 
-The `rank` column is a **pass signal, not potency.** BindCraft's authors state their interface metric predicts *whether* a design binds, not *how tightly*, so the ordering says which designs are more likely to bind, not which binds hardest. The manifest records this in `rank_meaning`.
+The `rank` column is a **pass signal, not potency.** Boltz-2 confidence metrics (for example `design_to_target_iptm`) reflect predicted complex quality, not measured binding affinity, so the ordering says which designs are more likely to form the intended complex, not which binds hardest. The manifest records this in `rank_meaning`.
 
-The design step is **reproducible given a seed, not deterministic.** The manifest `reproducibility` field records the `seed` and trajectory count where the campaign provides them.
+The design step is **reproducible given a seed, not deterministic.** The manifest `reproducibility` field records the `seed` and design count where the campaign provides them.
 
 ### Manifest fields
 
@@ -60,20 +62,22 @@ The `index.json` manifest adds, beyond the ranked `entries`:
 
 ## Bar
 
-`pip install -e .` then `pytest` (53 tests) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
+`pip install -e .` then `pytest` (54 tests) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
 
 ## Deployment
 
-Install from source with `pip install -e .` or `uv pip install -e .`, then run `bindi run campaigns/pdl1.json`, or build and run the container:
+Install from source with `pip install -e .` or `uv pip install -e .`, install BoltzGen (`pip install boltzgen`) on a GPU host, fetch campaign targets (`campaigns/fetch_targets.sh`), then run `bindi run campaigns/pdl1.json`, or build and run the container:
 
 ```bash
 docker build -f containers/Dockerfile -t bindi:local .
 docker run --gpus all -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
 ```
 
+BoltzGen downloads model weights on first use (~6 GB for Boltz checkpoints; additional cache for inverse folding / ESMFold2 depending on protocol). Set `BOLTZ_CACHE` or BoltzGen’s `--cache` to a persistent volume in production.
+
 ## License
 
-**bindi 🐨** is released under the MIT license. [BindCraft2](https://github.com/PacesaLab/BindCraft2) is a separate dependency with its own license terms.
+**bindi 🐨** is released under the MIT license. [BoltzGen](https://github.com/HannesStark/boltzgen) is a separate dependency with its own license terms.
 
 ## References
 
@@ -81,13 +85,13 @@ Each entry is tied to the one claim in this README that rests on it; nothing is 
 
 ### Peer-reviewed
 
-- **Pacesa, M. et al.** One-shot design of functional protein binders with BindCraft. *Nature* 646, 483–492 (2025). DOI: 10.1038/s41586-025-09429-6 (PMID: 40866699). — The design step: **bindi 🐨** orchestrates [BindCraft2](https://github.com/PacesaLab/BindCraft2) to generate de novo binders, and `rank` being a *whether-it-binds* pass signal rather than potency restates BindCraft's own interface metric.
 - **Sampson, J. M. et al.** Robust prediction of relative binding energies for protein–protein complex mutations using free energy perturbation calculations. *J. Mol. Biol.* 436, 168640 (2024). DOI: 10.1016/j.jmb.2024.168640 (PMID: 38844044). — The relative-ranking-only claim: relative binding free energies between close mutants are predictable where single-structure absolute affinity is not, so bindi emits an ordering and never a kcal/mol value.
 - **Liu, H. et al.** PPB-Affinity: Protein–Protein Binding Affinity dataset for AI-based protein drug discovery. *Scientific Data* (2024). DOI: 10.1038/s41597-024-03997-4. — The `benchmark` field: the *measured* relative affinities that `src/bindi/data/benchmark.toml` is to be checked against come from a dataset of this kind; the record's honest `status` is `unchecked` until that check runs.
 - **Keskin, D. B. et al.** Neoantigen vaccine generates intratumoral T cell responses in phase Ib glioblastoma trial. *Nature* 565, 234–239 (2019). DOI: 10.1038/s41586-018-0792-9 (PMID: 30568305). — The disclosure that a gallery's candidate order can be "from the published trial, not computed here": the phase Ib glioblastoma neoantigen trial is that published source.
 
 ### Preprints and tool repositories (not peer-reviewed)
 
+- **Stärk, H. et al.** BoltzGen: Toward Universal Binder Design. *bioRxiv* (2025). DOI: 10.1101/2025.11.20.689494. — The design step: **bindi 🐨** orchestrates [BoltzGen](https://github.com/HannesStark/boltzgen) to generate de novo binders; ranking uses Boltz-2 confidence metrics such as `design_to_target_iptm`, not absolute affinity.
 - **AbBiBench** (Antibody Binding Benchmarking). arXiv:2506.04235 (2025). — Cited for **benchmark design only**: treating the antibody–antigen complex as the scored unit informs how the multiverse scorer-ensemble would be evaluated. It is not evidence that the ensemble works, which is why the ensemble ships off by default.
 
 ### Unsupported claims (no peer-reviewed support)

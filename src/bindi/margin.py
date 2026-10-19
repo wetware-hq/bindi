@@ -35,6 +35,15 @@ NOT_COMPUTED_REASON = (
     "design run has produced designs to score."
 )
 
+SEQUENCE_SCORER_IDS = frozenset({"class_bucket_v1", "blosum_position_v2"})
+STRUCTURAL_SCORER_ID = "bindcraft_modal_v1"
+
+THRESHOLD_NOT_ESTABLISHED_REASON = (
+    "Margin threshold is not established: only a structural scorer (bindcraft_modal_v1) that "
+    "clears PAIR-EASY at the signed 2×-spread threshold may establish the immunology margin "
+    "stage. Sequence-level scorers remain selectable for reproduction but do not clear the margin."
+)
+
 
 def load_scorer(spec: str | None = None) -> Callable[[str, str], float] | None:
     """Resolve a scorer from `module:function`; None when nothing is configured."""
@@ -47,12 +56,48 @@ def load_scorer(spec: str | None = None) -> Callable[[str, str], float] | None:
     return getattr(importlib.import_module(module_name), func_name)
 
 
+def _threshold_fields(
+    *,
+    scorer_id: str | None,
+    evidence_level: str | None,
+    threshold_status: str | None = None,
+) -> dict[str, Any]:
+    if scorer_id in SEQUENCE_SCORER_IDS or evidence_level == "sequence_level_not_structure_validated":
+        return {
+            "threshold_status": "not_established",
+            "clears_margin_threshold": False,
+            "threshold_reason": THRESHOLD_NOT_ESTABLISHED_REASON,
+        }
+    if threshold_status:
+        return {
+            "threshold_status": threshold_status,
+            "clears_margin_threshold": threshold_status == "established",
+        }
+    if scorer_id == STRUCTURAL_SCORER_ID:
+        return {
+            "threshold_status": "not_established",
+            "clears_margin_threshold": False,
+            "threshold_reason": (
+                "Structural scorer invoked without a completed PAIR-EASY repeat-noise report; "
+                "threshold not established."
+            ),
+        }
+    return {
+        "threshold_status": "not_established",
+        "clears_margin_threshold": False,
+        "threshold_reason": THRESHOLD_NOT_ESTABLISHED_REASON,
+    }
+
+
 def score_wild_type_margin(
     target: dict[str, Any],
     designs: list[dict[str, Any]] | None = None,
     *,
     scorer: Callable[[str, str], float] | None = None,
     scorer_spec: str | None = None,
+    scorer_id: str | None = None,
+    threshold_status: str | None = None,
+    evidence_level: str | None = None,
 ) -> dict[str, Any]:
     """Return the margin record for a case. Honest about not being computed."""
     designs = designs or []
@@ -69,6 +114,8 @@ def score_wild_type_margin(
         "scorer": None,
         "per_design": [],
     }
+    if evidence_level:
+        record["evidence_level"] = evidence_level
 
     if not mutant or not wild:
         record["status"] = "not_applicable"
@@ -85,9 +132,14 @@ def score_wild_type_margin(
         record["reason"] = NOT_COMPUTED_REASON + (
             "" if scorer is not None else f" No scorer configured ({SCORER_ENV} unset)."
         ) + ("" if designs else " No designs were produced (fixture-backed run).")
+        record.update(
+            _threshold_fields(scorer_id=scorer_id, evidence_level=record.get("evidence_level"))
+        )
         return record
 
     record["scorer"] = getattr(scorer, "__qualname__", repr(scorer))
+    if scorer_id:
+        record["scorer_id"] = scorer_id
     for design in designs:
         sequence = design.get("sequence") or ""
         mutant_score = float(scorer(mutant, sequence))
@@ -101,4 +153,11 @@ def score_wild_type_margin(
             }
         )
     record["status"] = "stated"
+    record.update(
+        _threshold_fields(
+            scorer_id=scorer_id or record.get("scorer_id"),
+            evidence_level=record.get("evidence_level"),
+            threshold_status=threshold_status,
+        )
+    )
     return record

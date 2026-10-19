@@ -1,0 +1,82 @@
+{
+  "schema": "bindi.immunology_case.v1",
+  "case_id": "SYNTH-WET-IMM-001",
+  "wet_record_id": "WET-IMM-001",
+  "presentation": {
+    "summary": "Signed synthetic immunology patient for margin evaluation on the case neoantigen pair.",
+    "diagnosis": "Synthetic neoantigen stand-in (immunology margin target)",
+    "stage": "IV",
+    "prior_therapy": ["synthetic prior therapy"],
+    "ecog": 1
+  },
+  "hla": {
+    "class_i": ["HLA-A*02:01", "HLA-B*07:02", "HLA-C*07:02"],
+    "class_ii": ["HLA-DRB1*15:01"],
+    "typing_method": "invented for testing",
+    "restriction_allele": "HLA-A*02:01"
+  },
+  "neoantigen": {
+    "gene": "SYNTHGENE-IMM",
+    "variant": "p.M3S",
+    "mutant_peptide": {
+      "sequence": "YLMSYNGVV",
+      "provenance": {"kind": "reference", "source": "WET-IMM-001 signed mutant (M3S)"}
+    },
+    "wild_type_peptide": {
+      "sequence": "YLDSYNGVV",
+      "provenance": {"kind": "reference", "source": "WET-IMM-001 signed wild-type (D at 3)"}
+    },
+    "mutated_position": 3,
+    "source": "invented"
+  },
+  "benchmark_set_id": "BENCH-PAIR-SET-001",
+  "benchmark_pairs": [
+    {
+      "pair_id": "PAIR-HARD",
+      "description": "Conservative methionine to valine substitution at the anchor position (same hydrophobic class).",
+      "neoantigen": {
+        "mutant_peptide": {
+          "sequence": "YLGVFPGDW",
+          "provenance": {"kind": "reference", "source": "PAIR-HARD mutant (M3V) — synthetic bench, not the case peptide"}
+        },
+        "wild_type_peptide": {
+          "sequence": "YLGMFPGDW",
+          "provenance": {"kind": "reference", "source": "PAIR-HARD wild-type (M at 3) — synthetic bench"}
+        }
+      }
+    },
+    {
+      "pair_id": "PAIR-EASY",
+      "description": "Lysine to glutamate charge swap at position 4 (large electrostatic change).",
+      "neoantigen": {
+        "mutant_peptide": {
+          "sequence": "YLGEFPGDW",
+          "provenance": {"kind": "reference", "source": "PAIR-EASY mutant (K4E) — synthetic bench positive control"}
+        },
+        "wild_type_peptide": {
+          "sequence": "YLGKFPGDW",
+          "provenance": {"kind": "reference", "source": "PAIR-EASY wild-type (K at 4) — synthetic bench"}
+        }
+      }
+    }
+  ],
+  "consent": {
+    "obtained": true,
+    "design_use": true,
+    "scope": "research_only",
+    "date": "1937-04-02",
+    "witness": "invented witness (synthetic)"
+  },
+  "data_class": {
+    "synthetic": true,
+    "sensitivity": "internal",
+    "release": "not_a_release",
+    "retention": "signed synthetic immunology record for margin evaluation; not a release"
+  },
+  "signature": {
+    "signed": true,
+    "signed_by": "synthetic clinical sign-off (WET-IMM-001)",
+    "role": "physician (synthetic)",
+    "signed_at": "1937-04-02T00:00:00Z"
+  }
+}

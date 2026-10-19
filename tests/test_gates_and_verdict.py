@@ -103,7 +103,7 @@ def test_human_reference_gate_refuses_missing_reference(tmp_path, monkeypatch):
     assert record["status"] == "refuse"
 
 
-def test_human_reference_gate_refuses_on_hit(tmp_path):
+def test_human_reference_gate_refuses_on_hit(tmp_path, require_mmseqs):
     reference = tmp_path / "ref.fasta"
     reference.write_text(">synthetic\nMKTAYIAKQRQISFVKSHFSRQ\n", encoding="utf-8")
     hit = gates.human_reference_gate(
@@ -120,7 +120,7 @@ def test_human_reference_gate_refuses_on_hit(tmp_path):
     assert blast["evalue"]
 
 
-def test_hazard_screen_refuses_homology_not_exact_match(tmp_path):
+def test_hazard_screen_refuses_homology_not_exact_match(tmp_path, require_mmseqs):
     hazard = tmp_path / "hazard.fasta"
     hazard.write_text(">motif\nGFTFSSYAMS\n", encoding="utf-8")
     # One conservative substitution in the motif (S→T); below 100% global exact match.
@@ -137,7 +137,9 @@ def test_hazard_screen_refuses_homology_not_exact_match(tmp_path):
     assert row["local_window"]["verdict"] == "refuse" or row["global_identity"]["verdict"] == "refuse"
 
 
-def test_human_reference_gate_refuses_on_local_window_below_global_threshold(tmp_path):
+def test_human_reference_gate_refuses_on_local_window_below_global_threshold(
+    tmp_path, require_mmseqs
+):
     reference = tmp_path / "ref.fasta"
     reference.write_text(f">human\n{WINDOW_ONLY_HUMAN_REF}\n", encoding="utf-8")
     record = gates.human_reference_gate(
@@ -154,7 +156,7 @@ def test_human_reference_gate_refuses_on_local_window_below_global_threshold(tmp
     assert row["local_window"]["best_window"]["query_end"]
 
 
-def test_human_reference_gate_passes_clean_under_global_and_window(tmp_path):
+def test_human_reference_gate_passes_clean_under_global_and_window(tmp_path, require_mmseqs):
     reference = tmp_path / "ref.fasta"
     reference.write_text(">synthetic\nMKTAYIAKQRQISFVKSHFSRQ\n", encoding="utf-8")
     clean = gates.human_reference_gate(
@@ -168,7 +170,7 @@ def test_human_reference_gate_passes_clean_under_global_and_window(tmp_path):
     assert row["local_window"]["verdict"] == "pass"
 
 
-def test_human_reference_gate_passes_clean_sequence(tmp_path):
+def test_human_reference_gate_passes_clean_sequence(tmp_path, require_mmseqs):
     reference = tmp_path / "ref.fasta"
     reference.write_text(">synthetic\nMKTAYIAKQRQISFVKSHFSRQ\n", encoding="utf-8")
     clean = gates.human_reference_gate(
@@ -191,7 +193,7 @@ def test_human_reference_gate_refuses_missing_binary(tmp_path, monkeypatch):
     assert "mmseqs2" in record["reason"].lower()
 
 
-def test_refused_on_hit_is_a_passing_run(tmp_path, monkeypatch):
+def test_refused_on_hit_is_a_passing_run(tmp_path, monkeypatch, require_mmseqs):
     result, lines = _run(tmp_path, monkeypatch, human_ref=HUMAN_REF_HIT)
     assert result["exit_code"] == EXIT_OK
     assert result["run_verdict"] == "pass"
@@ -202,7 +204,7 @@ def test_refused_on_hit_is_a_passing_run(tmp_path, monkeypatch):
     assert not (tmp_path / "gallery" / "SYNTH-IMM-001" / "letter.json").exists()
 
 
-def test_clean_pass_with_both_gates_writes_letter(tmp_path, monkeypatch):
+def test_clean_pass_with_both_gates_writes_letter(tmp_path, monkeypatch, require_mmseqs):
     result, lines = _run(tmp_path, monkeypatch)
     assert result["exit_code"] == EXIT_OK
     assert result["run_verdict"] == "pass"
@@ -235,7 +237,7 @@ def test_verdict_fails_when_letter_shown_without_gate_block():
     assert "human_reference_gate" in verdict["reason"]
 
 
-def test_case_run_exits_nonzero_when_verdict_fails(tmp_path, monkeypatch):
+def test_case_run_exits_nonzero_when_verdict_fails(tmp_path, monkeypatch, require_mmseqs):
     _configure_gates(monkeypatch, tmp_path)
     result, lines = _run(tmp_path, monkeypatch)
     assert result["exit_code"] == EXIT_OK
@@ -245,7 +247,7 @@ def test_case_run_exits_nonzero_when_verdict_fails(tmp_path, monkeypatch):
     assert evaluate_run_verdict(lines)["verdict"] == "pass"
 
 
-def test_hazard_refuse_also_passes_run(tmp_path, monkeypatch):
+def test_hazard_refuse_also_passes_run(tmp_path, monkeypatch, require_mmseqs):
     hazard = tmp_path / "hazard_hit.fasta"
     hazard.write_text(">motif\nGFTFSSYAMS\n", encoding="utf-8")
     result, _ = _run(tmp_path, monkeypatch, hazard_ref=hazard)

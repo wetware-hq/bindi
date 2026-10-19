@@ -73,6 +73,7 @@ def test_repeat_noise_report_has_required_statistics():
     easy_eval = report["pairs"]["PAIR-EASY"]["margin_vs_wild_type"]
     assert "threshold_pending_signoff" in easy_eval
     assert "separates_at_least_threshold" in easy_eval
+    assert easy_eval["threshold_status"] == "not_established"
     hard_eval = report["pairs"]["PAIR-HARD"]["margin_vs_wild_type"]
     assert "separates_at_least_threshold" not in hard_eval
 
@@ -111,5 +112,7 @@ def test_sequence_design_case_run_emits_provenance_and_margin(tmp_path, monkeypa
     assert by_stage["design"]["evidence_level"] == design_engine.EVIDENCE_LEVEL
     assert by_stage["margin_wild_type"]["status"] == "stated"
     assert by_stage["margin_wild_type"]["scorer_id"] == "blosum_position_v2"
-    letter = json.loads(Path(result["letter"]).read_text(encoding="utf-8"))
-    assert letter["evidence_level"] == design_engine.EVIDENCE_LEVEL
+    assert by_stage["margin_wild_type"]["threshold_status"] == "not_established"
+    if result.get("letter"):
+        letter = json.loads(Path(result["letter"]).read_text(encoding="utf-8"))
+        assert letter["evidence_level"] == design_engine.EVIDENCE_LEVEL

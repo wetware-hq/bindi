@@ -410,6 +410,16 @@ def case_run(
         margin_record["evidence_level"] = design_engine.EVIDENCE_LEVEL
         margin_record["scorer_id"] = scorer_id
         margin_record["scorer_version"] = sequence_scorer_meta["version"]
+        margin_record.update(
+            margin._threshold_fields(
+                scorer_id=scorer_id,
+                evidence_level=design_engine.EVIDENCE_LEVEL,
+            )
+        )
+    elif margin_record.get("status") == "not_computed":
+        margin_record.update(
+            margin._threshold_fields(scorer_id=None, evidence_level=None)
+        )
     trace.emit(
         "margin_wild_type",
         margin_record["status"],

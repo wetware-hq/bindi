@@ -1,6 +1,7 @@
 {
   "schema": "bindi.immunology_case.v1",
   "case_id": "SYNTH-BENCH-001",
+  "benchmark_set_id": "BENCH-PAIR-SET-001",
   "presentation": {
     "summary": "Signed synthetic benchmark patient for sequence-level design repeat-noise measurement. All fields invented for testing.",
     "diagnosis": "Synthetic neoantigen benchmark stand-in",

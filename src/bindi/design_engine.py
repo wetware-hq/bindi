@@ -423,15 +423,19 @@ def margin_threshold_from_spread(spread: float) -> float:
 def evaluate_easy_pair_margin(distribution: dict[str, Any]) -> dict[str, Any]:
     threshold = margin_threshold_from_spread(distribution["spread"])
     mean_margin = distribution["mean"]
+    separates = abs(mean_margin) >= threshold and mean_margin > 0
     return {
         "mean_margin": mean_margin,
         "spread": distribution["spread"],
         "threshold_pending_signoff": threshold,
         "threshold_multiplier": MARGIN_THRESHOLD_SPREAD_MULTIPLIER_PENDING_SIGNOFF,
-        "separates_at_least_threshold": abs(mean_margin) >= threshold,
+        "separates_at_least_threshold": separates,
+        "threshold_status": "not_established",
+        "clears_margin_threshold": False,
         "note": (
-            "Threshold constant is pending chief-scientist sign-off; multiplier is sourced "
-            "from measured repeat-run spread on the same pair."
+            "Sequence-level scorer: does not establish the immunology margin threshold (room BIO "
+            "USE structure). Threshold constant is pending chief-scientist sign-off; multiplier "
+            "is sourced from measured repeat-run spread on the same pair."
         ),
     }
 
@@ -453,8 +457,10 @@ def run_repeat_noise_report(
         "scoring_function": meta["scoring_function"],
         "evidence_level": EVIDENCE_LEVEL,
         "case_id": case.get("case_id"),
+        "wet_record_id": case.get("wet_record_id"),
         "repeats": repeats,
         "seed_start": seed_start,
+        "margin_threshold_status": "not_established",
         "pairs": {},
     }
     for pair_id in ("PAIR-HARD", "PAIR-EASY"):

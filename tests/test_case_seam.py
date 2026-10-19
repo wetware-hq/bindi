@@ -176,7 +176,7 @@ def test_hold_clears_only_when_signed_gated_and_margin_stated():
     assert case_mod.design_hold_reasons(
         target,
         human_reference={"status": "pass"},
-        margin={"status": "stated"},
+        margin={"status": "stated", "threshold_status": "established"},
     ) == []
 
 
@@ -263,7 +263,7 @@ def test_end_to_end_writes_one_trace_covering_every_stage(tmp_path, monkeypatch)
     assert {line["case_id"] for line in lines if line["seq"] > 1} == {"SYNTH-IMM-001"}
 
 
-def test_trace_marks_the_placeholders_honestly(tmp_path, monkeypatch):
+def test_trace_marks_the_placeholders_honestly(tmp_path, monkeypatch, require_mmseqs):
     _configure_gates(monkeypatch, tmp_path)
     monkeypatch.delenv(margin.SCORER_ENV, raising=False)
     _, lines = _run(tmp_path)
@@ -311,7 +311,9 @@ def test_requesting_a_real_design_run_is_refused_and_exits_two(tmp_path):
     assert "curate" not in [line["stage"] for line in lines]
 
 
-def test_ward_handoff_payload_is_built_but_unranked_and_unreleased(tmp_path, monkeypatch):
+def test_ward_handoff_payload_is_built_but_unranked_and_unreleased(
+    tmp_path, monkeypatch, require_mmseqs
+):
     _configure_gates(monkeypatch, tmp_path)
     result, _ = _run(tmp_path)
     payload = json.loads(Path(result["handoff"]).read_text(encoding="utf-8"))

@@ -42,6 +42,7 @@ include = [
   "/campaigns",
   "/fixtures",
   "/schemas",
+  "/evidence",
   "/AGENT.md",
   "/README.md",
   "/LICENSE",

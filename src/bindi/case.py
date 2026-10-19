@@ -291,6 +291,12 @@ def design_hold_reasons(
             f"{(margin or {}).get('status', 'absent')!r}): the Scientist's condition is scoring "
             "against the wild-type complex with a stated margin, not the mutant alone"
         )
+    if (margin or {}).get("threshold_status") != "established":
+        reasons.append(
+            "structural margin threshold is not established (status="
+            f"{(margin or {}).get('threshold_status', 'absent')!r}): room BIO decision USE "
+            "structure — sequence-only scorers do not clear the margin stage"
+        )
     return reasons
 
 

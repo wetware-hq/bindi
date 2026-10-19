@@ -13,7 +13,9 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = []
+dependencies = [
+  "biopython>=1.83",
+]
 
 [project.urls]
 Homepage = "https://github.com/wetwarehq/bindi"
@@ -39,6 +41,8 @@ include = [
   "/tests",
   "/campaigns",
   "/fixtures",
+  "/schemas",
+  "/evidence",
   "/AGENT.md",
   "/README.md",
   "/LICENSE",

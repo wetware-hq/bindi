@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wetware-hq/bindi/schemas/case_trace.v1.schema.json",
+  "title": "bindi.case_trace.v1",
+  "description": "One JSONL line in a case-run trace. Sequence-bearing fields use bindi.sequence_field.v1.",
+  "type": "object",
+  "required": ["schema", "ts", "seq", "stage", "status"],
+  "properties": {
+    "schema": {"const": "bindi.case_trace.v1"},
+    "ts": {"type": "string"},
+    "seq": {"type": "integer", "minimum": 1},
+    "case_id": {"type": "string"},
+    "stage": {"type": "string"},
+    "status": {"type": "string"},
+    "mutant_peptide": {"$ref": "sequence_field.v1.schema.json"},
+    "wild_type_peptide": {"$ref": "sequence_field.v1.schema.json"},
+    "per_sequence": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "sequence": {"$ref": "sequence_field.v1.schema.json"}
+        }
+      }
+    }
+  }
+}

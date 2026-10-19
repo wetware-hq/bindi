@@ -1,0 +1,94 @@
+{
+  "case_id": "SYNTH-BENCH-001",
+  "evidence_level": "sequence_level_not_structure_validated",
+  "pairs": {
+    "PAIR-EASY": {
+      "description": "Lysine to glutamate charge swap at position 4 (large electrostatic change).",
+      "distribution": {
+        "max": 7.065,
+        "mean": 3.68025,
+        "min": -1.23,
+        "n": 20,
+        "per_seed_margins": [
+          -1.23,
+          4.515,
+          2.085,
+          6.465,
+          6.255,
+          5.94,
+          5.865,
+          5.46,
+          0.765,
+          1.155,
+          5.445,
+          5.82,
+          6.99,
+          1.515,
+          6.225,
+          3.975,
+          7.065,
+          -0.27,
+          -0.945,
+          0.51
+        ],
+        "std": 2.811242819021509
+      },
+      "margin_vs_wild_type": {
+        "mean_margin": 3.68025,
+        "note": "Threshold constant is pending chief-scientist sign-off; multiplier is sourced from measured repeat-run spread on the same pair.",
+        "separates_at_least_threshold": false,
+        "spread": 2.811242819021509,
+        "threshold_multiplier": 2.0,
+        "threshold_pending_signoff": 5.622485638043018
+      },
+      "mutant_peptide": "YLGEFPGDW",
+      "pair_id": "PAIR-EASY",
+      "wild_type_peptide": "YLGKFPGDW"
+    },
+    "PAIR-HARD": {
+      "description": "Conservative methionine to valine substitution at the anchor position (same hydrophobic class).",
+      "distribution": {
+        "max": 0.0,
+        "mean": 0.0,
+        "min": 0.0,
+        "n": 20,
+        "per_seed_margins": [
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0,
+          0.0
+        ],
+        "std": 0.0
+      },
+      "margin_vs_wild_type": {
+        "mean_margin": 0.0,
+        "note": "PAIR-HARD: spread reported only; no threshold attached.",
+        "spread": 0.0
+      },
+      "mutant_peptide": "YLGVFPGDW",
+      "pair_id": "PAIR-HARD",
+      "wild_type_peptide": "YLGMFPGDW"
+    }
+  },
+  "repeats": 20,
+  "schema": "bindi.sequence_design_repeat_noise.v1",
+  "scoring_function": "bindi.design_engine.score_binder_peptide",
+  "tool": "bindi.sequence_designer",
+  "tool_version": "1.0.0"
+}

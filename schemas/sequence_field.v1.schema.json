@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/wetware-hq/bindi/schemas/sequence_field.v1.schema.json",
+  "title": "bindi.sequence_field.v1",
+  "description": "A peptide or protein sequence with required provenance. Only sequences whose provenance is a scoring design tool may carry binding, affinity, or margin claims; the validator refuses other pairings.",
+  "type": "object",
+  "required": ["sequence", "provenance"],
+  "additionalProperties": false,
+  "properties": {
+    "sequence": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[ACDEFGHIKLMNPQRSTVWY]+$",
+      "description": "One-letter amino-acid sequence."
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["kind"],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": ["design_tool", "fixture", "reference"]
+        },
+        "tool": {
+          "type": "string",
+          "description": "Design tool name when kind is design_tool (e.g. bindcraft)."
+        },
+        "version": {
+          "type": "string",
+          "description": "Design tool version when kind is design_tool."
+        },
+        "scoring_function": {
+          "type": "string",
+          "description": "Named scoring function from the design tool when kind is design_tool."
+        },
+        "source": {
+          "type": "string",
+          "description": "Human-readable source label when kind is reference or fixture."
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "design_tool"}}, "required": ["kind"]},
+          "then": {"required": ["tool", "version", "scoring_function"]}
+        }
+      ]
+    },
+    "mutant_complex_score": {"type": "string", "description": "Pass-signal score; design_tool provenance only."},
+    "wild_type_complex_score": {"type": "string", "description": "Pass-signal score; design_tool provenance only."},
+    "margin": {"type": "string", "description": "Stated margin; design_tool provenance only."},
+    "binding": {"type": "string"},
+    "affinity": {"type": "string"},
+    "evidence_level": {
+      "type": "string",
+      "enum": ["sequence_level_not_structure_validated"],
+      "description": "Explicit label that binding or margin claims are sequence-level only, not structure-validated."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "not": {
+          "properties": {"provenance": {"properties": {"kind": {"const": "design_tool"}}}},
+          "required": ["provenance"]
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {"required": ["margin"]},
+            {"required": ["mutant_complex_score"]},
+            {"required": ["wild_type_complex_score"]},
+            {"required": ["binding"]},
+            {"required": ["affinity"]}
+          ]
+        }
+      }
+    }
+  ]
+}

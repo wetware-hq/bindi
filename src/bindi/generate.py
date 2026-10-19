@@ -16,6 +16,7 @@ from .boltz import (
     build_boltzgen_command,
     resolve_design_spec_path,
 )
+from .case import assert_design_allowed, case_path_from, resolve_target
 from .policy import resolve_boltz_campaign
 
 
@@ -43,6 +44,13 @@ def generate(
             "project_folder": str(campaign_dir),
             "gallery": str(gallery_path),
         }
+
+    # The seam's hold: when the campaign names a patient case record, a real design run
+    # only starts if that record is signed, consents to design use, and the Scientist's
+    # conditions (human-reference gate pass, stated wild-type margin, established structural
+    # margin threshold) are satisfied. Nothing here loosens for a fixture target.
+    if case_path_from(policy) is not None:
+        assert_design_allowed(resolve_target(policy))
 
     design_spec = resolve_design_spec_path(boltz, base)
     cmd = build_boltzgen_command(boltz, workdir=base, design_spec=design_spec, extra_args=extra_args)

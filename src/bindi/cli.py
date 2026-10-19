@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
 from . import VERSION
+from .case import CaseError, DesignHold
 from .curate import curate
+from . import design_engine
+from . import structural_margin
+from .case import load_case
+from .e2e import EXIT_CASE_ERROR, EXIT_HOLD, case_run
 from .generate import generate
 from .policy import load_policy, policy_from_nl_stub
 from .resource import resource_descriptor
@@ -62,6 +68,103 @@ def main(argv: list[str] | None = None) -> int:
     full.add_argument("--boltz-rank", action="store_true")
     full.add_argument("--bindcraft-rank", action="store_true", help=argparse.SUPPRESS)
 
+    e2e = sub.add_parser(
+        "case-run",
+        help="Run one synthetic immunology case end to end and write a single JSONL trace",
+    )
+    e2e.add_argument("case", help="Patient case record JSON (bindi.immunology_case.v1)")
+    e2e.add_argument("--policy", help="Campaign policy JSON (optional; target comes from the case)")
+    e2e.add_argument("--workdir", type=Path, default=Path.cwd())
+    e2e.add_argument("--trace", type=Path, help="Trace path (default <workdir>/case_trace.jsonl)")
+    e2e.add_argument(
+        "--design",
+        action="store_true",
+        help="Request a real design run. Refused while the hold is in force (exit 2).",
+    )
+    e2e.add_argument("--human-reference-fasta", help="Reference FASTA for the human-reference gate")
+    e2e.add_argument("--human-reference-source", help="Version/source label for the human reference")
+    e2e.add_argument("--hazard-screen-fasta", help="Reference FASTA for the hazard screen gate")
+    e2e.add_argument("--hazard-screen-source", help="Version/source label for the hazard screen")
+    e2e.add_argument("--margin-scorer", help="module:function scorer for the wild-type margin")
+    e2e.add_argument(
+        "--sequence-design",
+        action="store_true",
+        help="Run the v1 sequence-level designer (signed case required; not structure-validated).",
+    )
+    e2e.add_argument(
+        "--design-seed",
+        type=int,
+        default=42,
+        help="RNG seed for --sequence-design (default 42).",
+    )
+    e2e.add_argument(
+        "--design-scorer",
+        default=design_engine.DEFAULT_SCORER_ID,
+        choices=sorted(design_engine.SCORER_REGISTRY),
+        help="Sequence design scorer id (default blosum_position_v2).",
+    )
+
+    noise = sub.add_parser(
+        "sequence-design-repeat-noise",
+        help="Measure repeat-run score spread for PAIR-HARD and PAIR-EASY on a signed case.",
+    )
+    noise.add_argument(
+        "case",
+        help="Signed immunology case JSON with benchmark_pairs (PAIR-HARD, PAIR-EASY).",
+    )
+    noise.add_argument(
+        "--repeats",
+        type=int,
+        default=20,
+        help="Independent designer seeds per pair (default 20).",
+    )
+    noise.add_argument(
+        "--seed-start",
+        type=int,
+        default=1000,
+        help="First RNG seed for repeat runs (default 1000).",
+    )
+    noise.add_argument(
+        "--scorer",
+        default=design_engine.DEFAULT_SCORER_ID,
+        choices=sorted(design_engine.SCORER_REGISTRY),
+        help="Scorer id for repeat-noise measurement (default blosum_position_v2).",
+    )
+    noise.add_argument(
+        "--output",
+        type=Path,
+        help="Evidence JSON path (default depends on --scorer).",
+    )
+
+    smargin = sub.add_parser(
+        "structural-margin-repeat-noise",
+        help=(
+            "20-seed BindCraft-on-Modal margin spread for PAIR-EASY/PAIR-HARD and the case "
+            "neoantigen pair (requires MODAL_TOKEN or BINDI_BINDCRAFT_MODAL_STUB=1)."
+        ),
+    )
+    smargin.add_argument(
+        "case",
+        help="Signed immunology case JSON (WET-IMM-001 / SYNTH-WET-IMM-001 with benchmark_pairs).",
+    )
+    smargin.add_argument("--repeats", type=int, default=20)
+    smargin.add_argument("--seed-start", type=int, default=1000)
+    smargin.add_argument(
+        "--output",
+        type=Path,
+        help="Evidence JSON path (default evidence/structural_margin_repeat_noise.v1.json).",
+    )
+    smargin.add_argument(
+        "--stub",
+        action="store_true",
+        help="Use deterministic stub Modal client (CI / no GPU).",
+    )
+    smargin.add_argument(
+        "--skip-case-pair",
+        action="store_true",
+        help="Only run benchmark PAIR-HARD and PAIR-EASY, not the case neoantigen peptides.",
+    )
+
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
 
     stub = sub.add_parser("stub", help="Build a starter policy from a one-line query")
@@ -75,6 +178,47 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     command = args.command
+
+    if command == "structural-margin-repeat-noise":
+        case = load_case(args.case)
+        if not case.get("signature", {}).get("signed"):
+            raise SystemExit("case record must be signed for structural margin measurement")
+        try:
+            client = (
+                structural_margin.StubBindCraftModalClient()
+                if args.stub or os.environ.get("BINDI_BINDCRAFT_MODAL_STUB") == "1"
+                else structural_margin.client_from_env()
+            )
+        except structural_margin.ModalTokenMissingError as exc:
+            raise SystemExit(str(exc)) from exc
+        output = args.output or structural_margin.default_evidence_path()
+        report = structural_margin.write_repeat_noise_evidence(
+            case,
+            output,
+            repeats=args.repeats,
+            seed_start=args.seed_start,
+            client=client,
+            include_case_pair=not args.skip_case_pair,
+        )
+        json.dump(report, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
+
+    if command == "sequence-design-repeat-noise":
+        case = load_case(args.case)
+        if not case.get("signature", {}).get("signed"):
+            raise SystemExit("case record must be signed for repeat-noise measurement")
+        output = args.output or design_engine.default_evidence_path(args.scorer)
+        report = design_engine.write_repeat_noise_evidence(
+            case,
+            output,
+            repeats=args.repeats,
+            seed_start=args.seed_start,
+            scorer_id=args.scorer,
+        )
+        json.dump(report, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
 
     if command == "recruit":
         json.dump(resource_descriptor(), sys.stdout, indent=2)
@@ -91,6 +235,36 @@ def main(argv: list[str] | None = None) -> int:
         json.dump(document, sys.stdout, indent=2)
         sys.stdout.write("\n")
         return 0
+
+    if command == "case-run":
+        policy = _load(args.policy) if args.policy else None
+        try:
+            result = case_run(
+                args.case,
+                policy=policy,
+                workdir=args.workdir,
+                trace_path=args.trace,
+                allow_design=args.design,
+                reference_fasta=args.human_reference_fasta,
+                reference_source=args.human_reference_source,
+                hazard_fasta=args.hazard_screen_fasta,
+                hazard_source=args.hazard_screen_source,
+                margin_scorer_spec=args.margin_scorer,
+                sequence_design=args.sequence_design,
+                design_seed=args.design_seed,
+                design_scorer_id=args.design_scorer,
+            )
+        except DesignHold as exc:
+            json.dump({"error": "design_hold", "detail": str(exc)}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT_HOLD
+        except CaseError as exc:
+            json.dump({"error": "case_error", "detail": str(exc)}, sys.stdout, indent=2)
+            sys.stdout.write("\n")
+            return EXIT_CASE_ERROR
+        json.dump(result, sys.stdout, indent=2)
+        sys.stdout.write("\n")
+        return int(result["exit_code"])
 
     policy_path = getattr(args, "policy", None)
     if policy_path is None and command != "recruit":

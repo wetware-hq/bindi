@@ -1,0 +1,81 @@
+{
+  "schema": "bindi.immunology_case.v1",
+  "case_id": "SYNTH-BENCH-001",
+  "benchmark_set_id": "BENCH-PAIR-SET-001",
+  "presentation": {
+    "summary": "Signed synthetic benchmark patient for sequence-level design repeat-noise measurement. All fields invented for testing.",
+    "diagnosis": "Synthetic neoantigen benchmark stand-in",
+    "stage": "IV",
+    "prior_therapy": ["synthetic prior therapy"],
+    "ecog": 0
+  },
+  "hla": {
+    "class_i": ["HLA-A*02:01", "HLA-B*07:02", "HLA-C*07:02"],
+    "class_ii": ["HLA-DRB1*15:01"],
+    "typing_method": "invented for testing",
+    "restriction_allele": "HLA-A*02:01"
+  },
+  "neoantigen": {
+    "gene": "SYNTHGENE-BENCH",
+    "variant": "p.K4E",
+    "mutant_peptide": {
+      "sequence": "YLGEFPGDW",
+      "provenance": {"kind": "reference", "source": "PAIR-EASY mutant (charge swap) primary target"}
+    },
+    "wild_type_peptide": {
+      "sequence": "YLGKFPGDW",
+      "provenance": {"kind": "reference", "source": "PAIR-EASY wild-type counterpart"}
+    },
+    "mutated_position": 4,
+    "source": "invented"
+  },
+  "benchmark_pairs": [
+    {
+      "pair_id": "PAIR-HARD",
+      "description": "Conservative methionine to valine substitution at the anchor position (same hydrophobic class).",
+      "neoantigen": {
+        "mutant_peptide": {
+          "sequence": "YLGVFPGDW",
+          "provenance": {"kind": "reference", "source": "PAIR-HARD mutant (M3V)"}
+        },
+        "wild_type_peptide": {
+          "sequence": "YLGMFPGDW",
+          "provenance": {"kind": "reference", "source": "PAIR-HARD wild-type (M at 3)"}
+        }
+      }
+    },
+    {
+      "pair_id": "PAIR-EASY",
+      "description": "Lysine to glutamate charge swap at position 4 (large electrostatic change).",
+      "neoantigen": {
+        "mutant_peptide": {
+          "sequence": "YLGEFPGDW",
+          "provenance": {"kind": "reference", "source": "PAIR-EASY mutant (K4E)"}
+        },
+        "wild_type_peptide": {
+          "sequence": "YLGKFPGDW",
+          "provenance": {"kind": "reference", "source": "PAIR-EASY wild-type (K at 4)"}
+        }
+      }
+    }
+  ],
+  "consent": {
+    "obtained": true,
+    "design_use": true,
+    "scope": "research_only",
+    "date": "1937-04-02",
+    "witness": "invented witness (synthetic)"
+  },
+  "data_class": {
+    "synthetic": true,
+    "sensitivity": "internal",
+    "release": "not_a_release",
+    "retention": "benchmark evidence; synthetic only"
+  },
+  "signature": {
+    "signed": true,
+    "signed_by": "synthetic clinical sign-off (benchmark)",
+    "role": "physician (synthetic)",
+    "signed_at": "1937-04-02T00:00:00Z"
+  }
+}

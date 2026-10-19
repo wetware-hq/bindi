@@ -1,13 +1,18 @@
-"""Campaign policy: BindCraft2 settings plus bindi curation metadata."""
+"""Campaign policy: BoltzGen / Boltz settings plus bindi curation metadata."""
 
 from __future__ import annotations
 
 import json
+import warnings
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .boltz import protocol_for_modality
+
 SCHEMA = "bindi.policy.v1"
+
+
 def load_policy(path: str | Path | None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
     if payload is not None:
         document = deepcopy(payload)
@@ -19,32 +24,64 @@ def load_policy(path: str | Path | None, payload: dict[str, Any] | None = None) 
     return normalize_policy(document)
 
 
+def _migrate_bindcraft_block(bindcraft: dict[str, Any]) -> dict[str, Any]:
+    """Map legacy BindCraft2 campaign fields onto BoltzGen policy keys."""
+    boltz = deepcopy(bindcraft)
+    if "budget" not in boltz and boltz.get("number_of_final_designs") is not None:
+        boltz["budget"] = boltz["number_of_final_designs"]
+    if "num_designs" not in boltz:
+        final_n = int(boltz.get("number_of_final_designs") or boltz.get("budget") or 10)
+        boltz["num_designs"] = max(final_n * 50, 50)
+    if "protocol" not in boltz:
+        boltz["protocol"] = protocol_for_modality(boltz.get("modality"))
+    return boltz
+
+
 def normalize_policy(document: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(document, dict):
         raise TypeError("policy must be a JSON object")
     if document.get("schema") == SCHEMA:
-        return document
-    if "bindcraft" in document or "curation" in document or "gallery" in document:
-        return document
-    # Bare BindCraft2 campaign JSON is accepted as the bindcraft block.
-    return {
-        "schema": SCHEMA,
-        "bindcraft": deepcopy(document),
-        "curation": {},
-        "gallery": "gallery",
-    }
+        doc = document
+    elif "boltz" in document or "bindcraft" in document or "curation" in document or "gallery" in document:
+        doc = document
+    else:
+        # Bare legacy campaign JSON becomes the design block.
+        return {
+            "schema": SCHEMA,
+            "boltz": _migrate_bindcraft_block(deepcopy(document)),
+            "curation": {},
+            "gallery": "gallery",
+        }
+
+    if doc.get("schema") != SCHEMA:
+        doc = {**doc, "schema": SCHEMA}
+
+    if "boltz" not in doc and "bindcraft" in doc:
+        warnings.warn(
+            "policy.bindcraft is deprecated; use policy.boltz (BindCraft2 was replaced by BoltzGen).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        doc["boltz"] = _migrate_bindcraft_block(doc.pop("bindcraft"))
+    elif "boltz" in doc and "bindcraft" in doc:
+        doc.pop("bindcraft", None)
+
+    boltz = doc.get("boltz")
+    if isinstance(boltz, dict):
+        doc["boltz"] = _migrate_bindcraft_block(boltz)
+    return doc
 
 
-def resolve_bindcraft_campaign(
+def resolve_boltz_campaign(
     policy: dict[str, Any],
     *,
     workdir: Path | None = None,
 ) -> tuple[dict[str, Any], Path]:
-    """Return BindCraft2 campaign dict and the gallery directory path."""
+    """Return BoltzGen campaign dict and the gallery directory path."""
     policy = normalize_policy(policy)
-    bindcraft = deepcopy(policy.get("bindcraft") or {})
-    if not bindcraft:
-        raise ValueError("policy.bindcraft is empty")
+    boltz = deepcopy(policy.get("boltz") or {})
+    if not boltz:
+        raise ValueError("policy.boltz is empty")
 
     base = workdir or Path.cwd()
     gallery_name = policy.get("gallery") or "gallery"
@@ -52,28 +89,42 @@ def resolve_bindcraft_campaign(
     if not gallery_path.is_absolute():
         gallery_path = base / gallery_path
 
-    project_folder = bindcraft.get("project_folder") or "results/campaign"
+    project_folder = boltz.get("project_folder") or "results/campaign"
     project_path = Path(project_folder)
     if not project_path.is_absolute():
         project_path = base / project_path
-    bindcraft["project_folder"] = str(project_path)
+    boltz["project_folder"] = str(project_path)
 
-    return bindcraft, gallery_path
+    return boltz, gallery_path
+
+
+def resolve_bindcraft_campaign(
+    policy: dict[str, Any],
+    *,
+    workdir: Path | None = None,
+) -> tuple[dict[str, Any], Path]:
+    """Deprecated alias for :func:`resolve_boltz_campaign`."""
+    return resolve_boltz_campaign(policy, workdir=workdir)
 
 
 def policy_from_nl_stub(query: str, **overrides: Any) -> dict[str, Any]:
     """Minimal helper for agents filling a campaign from natural language."""
-    bindcraft = {
+    boltz = {
         "target": overrides.pop("target", "hPDL1"),
         "modality": overrides.pop("modality", "binder"),
         "number_of_final_designs": overrides.pop("number_of_final_designs", 5),
         "project_folder": overrides.pop("project_folder", "results/campaign"),
+        "design_spec": overrides.pop("design_spec", "campaigns/pdl1_miniprotein.yaml"),
     }
-    bindcraft.update(overrides)
+    boltz.update(overrides)
+    boltz = _migrate_bindcraft_block(boltz)
     return {
         "schema": SCHEMA,
         "query": query,
-        "bindcraft": bindcraft,
-        "curation": {"rank_on": ["i_pDAE"], "top_n": bindcraft["number_of_final_designs"]},
+        "boltz": boltz,
+        "curation": {
+            "rank_on": ["design_to_target_iptm"],
+            "top_n": boltz.get("budget") or boltz["number_of_final_designs"],
+        },
         "gallery": "gallery",
     }

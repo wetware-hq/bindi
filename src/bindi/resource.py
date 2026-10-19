@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from . import VERSION
+
 RESOURCE_SCHEMA = "wetware.resource.v1"
-VERSION = "0.1.0"
 
 
 def resource_descriptor() -> dict[str, Any]:
@@ -13,7 +14,7 @@ def resource_descriptor() -> dict[str, Any]:
         "schema": RESOURCE_SCHEMA,
         "name": "bindi",
         "version": VERSION,
-        "description": "Generate and curate protein binders for a target via BindCraft2.",
+        "description": "Generate and curate protein binders for a target via BoltzGen (Boltz-1/Boltz-2).",
         "capabilities": ["generate", "curate"],
         "inputs": {
             "campaign": {
@@ -30,8 +31,8 @@ def resource_descriptor() -> dict[str, Any]:
             }
         },
         "tool": {
-            "name": "BindCraft2",
-            "url": "https://github.com/PacesaLab/BindCraft2",
+            "name": "BoltzGen",
+            "url": "https://github.com/HannesStark/boltzgen",
         },
         "container": {
             "dockerfile": "containers/Dockerfile",

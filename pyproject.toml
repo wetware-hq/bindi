@@ -1,12 +1,12 @@
 [project]
 name = "bindi"
-version = "0.1.0"
-description = "Generate and curate protein binders via BindCraft2 campaigns."
+version = "0.2.0"
+description = "Generate and curate protein binders via BoltzGen (Boltz-1/Boltz-2) campaigns."
 readme = "README.md"
 requires-python = ">=3.11"  # tomllib (stdlib) for cited TOML data files
 license = "MIT"
 authors = [{ name = "wetware", email = "hellowetware@gmail.com" }]
-keywords = ["protein", "binder", "BindCraft", "de novo design"]
+keywords = ["protein", "binder", "Boltz", "BoltzGen", "de novo design"]
 classifiers = [
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Bio-Informatics",

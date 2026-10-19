@@ -1,15 +1,13 @@
-"""Bindi: generate and curate protein binders from a campaign policy."""
+"""bindi: generate and curate protein binders via BoltzGen campaigns."""
 
-from .curate import curate
-from .policy import load_policy, resolve_bindcraft_campaign
-from .resource import VERSION, resource_descriptor
-from .run import run
+from .policy import load_policy, normalize_policy, resolve_bindcraft_campaign, resolve_boltz_campaign
+
+VERSION = "0.2.0"
 
 __all__ = [
     "VERSION",
-    "curate",
     "load_policy",
+    "normalize_policy",
+    "resolve_boltz_campaign",
     "resolve_bindcraft_campaign",
-    "resource_descriptor",
-    "run",
 ]

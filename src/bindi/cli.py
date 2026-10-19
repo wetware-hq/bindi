@@ -35,26 +35,32 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"bindi {VERSION}")
     sub = parser.add_subparsers(dest="command")
 
-    gen = sub.add_parser("generate", help="Run BindCraft2 design for a campaign policy")
+    gen = sub.add_parser("generate", help="Run BoltzGen design for a campaign policy")
     gen.add_argument("policy", nargs="?", help="Campaign policy JSON (or '-' for stdin)")
     gen.add_argument("--workdir", type=Path, default=Path.cwd())
     gen.add_argument("--dry-run", action="store_true", help="Write fixture ranked output (no GPU)")
 
     cur = sub.add_parser("curate", help="Build a gallery from campaign results")
     cur.add_argument("policy", nargs="?", help="Campaign policy JSON")
-    cur.add_argument("--project", type=Path, help="BindCraft2 project_folder override")
+    cur.add_argument("--project", type=Path, help="BoltzGen output directory override")
     cur.add_argument("--workdir", type=Path, default=Path.cwd())
+    cur.add_argument(
+        "--boltz-rank",
+        action="store_true",
+        help="Re-run BoltzGen filtering before building the gallery",
+    )
     cur.add_argument(
         "--bindcraft-rank",
         action="store_true",
-        help="Call bindcraft rank before building the gallery",
+        help=argparse.SUPPRESS,  # legacy alias for --boltz-rank
     )
 
     full = sub.add_parser("run", help="Generate then curate")
     full.add_argument("policy", nargs="?", help="Campaign policy JSON")
     full.add_argument("--workdir", type=Path, default=Path.cwd())
     full.add_argument("--dry-run", action="store_true")
-    full.add_argument("--bindcraft-rank", action="store_true")
+    full.add_argument("--boltz-rank", action="store_true")
+    full.add_argument("--bindcraft-rank", action="store_true", help=argparse.SUPPRESS)
 
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
 
@@ -91,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"{command} requires a policy path")
     policy = _load(policy_path)
 
+    boltz_rank = getattr(args, "boltz_rank", False) or getattr(args, "bindcraft_rank", False)
+
     if command == "generate":
         result = generate(policy, workdir=args.workdir, dry_run=args.dry_run)
     elif command == "curate":
@@ -98,14 +106,14 @@ def main(argv: list[str] | None = None) -> int:
             policy,
             project_folder=args.project,
             workdir=args.workdir,
-            use_bindcraft_rank=args.bindcraft_rank,
+            use_boltz_rank=boltz_rank,
         )
     else:
         result = run(
             policy,
             workdir=args.workdir,
             dry_run=args.dry_run,
-            use_bindcraft_rank=args.bindcraft_rank,
+            use_boltz_rank=boltz_rank,
         )
 
     json.dump(result, sys.stdout, indent=2)

@@ -13,7 +13,16 @@ from __future__ import annotations
 
 from typing import Any
 
-HIGHER_BETTER = {"i_pDAE", "i_pTM", "pTM", "Interface_BuriedArea", "Interface_Residues"}
+HIGHER_BETTER = {
+    "i_pDAE",
+    "i_pTM",
+    "pTM",
+    "Interface_BuriedArea",
+    "Interface_Residues",
+    "design_to_target_iptm",
+    "design_iptm",
+    "design_ptm",
+}
 KIND = "scorer_ensemble"
 
 

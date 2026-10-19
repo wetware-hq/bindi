@@ -2,7 +2,7 @@
 schema: wetware.agent.v1
 resource: bindi
 resource_schema: wetware.resource.v1
-version: 0.1.0
+version: 0.2.0
 capabilities:
   - generate
   - curate
@@ -23,9 +23,9 @@ recruit_command: bindi recruit
 
 # Bindi — agent manual
 
-You are recruiting **bindi**, a worker-deployable resource that designs de novo protein binders with [BindCraft2](https://github.com/PacesaLab/BindCraft2) and returns a **gallery** of ranked, scored candidates for experimental follow-up.
+You are recruiting **bindi**, a worker-deployable resource that designs de novo protein binders with [BoltzGen](https://github.com/HannesStark/boltzgen) (Boltz-1/Boltz-2) and returns a **gallery** of ranked, scored candidates for experimental follow-up.
 
-Use bindi when the user needs **binder generation and selection** for a protein target (miniprotein, VHH, peptide, or other modality supported by BindCraft2), not when they only need structure prediction, docking without design, or unrelated molecular biology tasks.
+Use bindi when the user needs **binder generation and selection** for a protein target (miniprotein, VHH, peptide, nanobody, or other modality supported by BoltzGen protocols), not when they only need structure prediction, docking without design, or unrelated molecular biology tasks.
 
 Human-facing overview: [README.md](README.md). Machine-readable contract: `bindi recruit` → `wetware.resource.v1` JSON (see [src/bindi/resource.py](src/bindi/resource.py)).
 
@@ -38,8 +38,8 @@ Human-facing overview: [README.md](README.md). Machine-readable contract: `bindi
 
 Capabilities:
 
-- **generate** — run `bindcraft design` for the campaign.
-- **curate** — rank designs and materialize the gallery from an existing BindCraft2 `project_folder`.
+- **generate** — run `boltzgen run` for the campaign.
+- **curate** — rank designs and materialize the gallery from an existing BoltzGen output directory (`project_folder`).
 
 Prefer **`bindi run`** unless generation or curation must run separately (e.g. re-curate after manual QC).
 
@@ -54,10 +54,10 @@ bindi recruit
 Recruit bindi when:
 
 1. The task explicitly asks for **de novo binder design** or a **shortlist of binders** against a target.
-2. BindCraft2-appropriate inputs exist or can be resolved (target identifier, modality, optional hotspot/epitope constraints in `bindcraft`).
-3. The environment provides **`bindcraft` on PATH** (container base `bindcraft:local`) or you will use **`--dry-run`** for pipeline validation only.
+2. BoltzGen-appropriate inputs exist or can be resolved (`design_spec` YAML, protocol, optional binding-site constraints in the spec).
+3. The environment provides **`boltzgen` on PATH** (see `containers/Dockerfile`) or you will use **`--dry-run`** for pipeline validation only.
 
-Do not recruit bindi for targets or modalities outside BindCraft2’s scope without checking [BindCraft2](https://github.com/PacesaLab/BindCraft2) documentation first.
+Do not recruit bindi for targets or modalities outside BoltzGen’s protocols without checking [BoltzGen](https://github.com/HannesStark/boltzgen) documentation first.
 
 ## Workflow
 
@@ -66,8 +66,8 @@ Do not recruit bindi for targets or modalities outside BindCraft2’s scope with
 Translate the user query into a **`bindi.policy.v1`** document:
 
 - **`query`** — one-sentence design intent (audit trail for humans).
-- **`bindcraft`** — BindCraft2 campaign fields: `target`, `modality`, `number_of_final_designs`, `project_folder`, plus any BC2-specific options (hotspots, chains, filters).
-- **`curation`** — `rank_on` (metric column names, default `["i_pDAE"]`), `top_n` (shortlist size). The multiverse ensemble is **off by default**; enable it with `ensemble: true` (and optional `universes` scorer columns, defaulting to the higher-better metrics present when at least two exist).
+- **`boltz`** — BoltzGen fields: `design_spec` (YAML path), `protocol`, `num_designs`, `budget` / `number_of_final_designs`, `project_folder`, plus optional `alpha`, `devices`, `seed`. Legacy `bindcraft` keys are migrated automatically.
+- **`curation`** — `rank_on` (metric column names, default `["design_to_target_iptm"]`), `top_n` (shortlist size). The multiverse ensemble is **off by default**; enable it with `ensemble: true` (and optional `universes` scorer columns, defaulting to the higher-better metrics present when at least two exist).
 - **`gallery`** — relative directory name for curated output (default `gallery`).
 
 Starter from natural language (always **review and edit** before a production GPU run):
@@ -77,11 +77,13 @@ bindi stub "VHH binders for human PD-L1" \
   --target hPDL1 --modality VHH --designs 10 > campaign.json
 ```
 
-Bare BindCraft2 JSON is accepted; bindi wraps it as `bindi.policy.v1` automatically.
+Bare legacy campaign JSON is accepted; bindi wraps it as `bindi.policy.v1` with a `boltz` block automatically.
 
 Reference campaign: [campaigns/pdl1.json](campaigns/pdl1.json).
 
-**Clinical utility bias:** prefer fewer, higher-confidence designs (`top_n` aligned with `number_of_final_designs`), explicit `rank_on` metrics that reflect interface quality (e.g. `i_pDAE`), and a clear `query` linking the design goal to a therapeutic or mechanistic hypothesis. Avoid inflating design counts without a stated experimental capacity.
+**Clinical utility bias:** prefer fewer, higher-confidence designs (`top_n` aligned with `budget`), explicit `rank_on` metrics that reflect interface quality (e.g. `design_to_target_iptm`, `min_design_to_target_pae`), and a clear `query` linking the design goal to a therapeutic or mechanistic hypothesis. Avoid inflating `num_designs` without a stated experimental capacity.
+
+Fetch mmCIF targets referenced by the design spec before GPU runs: `campaigns/fetch_targets.sh`.
 
 ### 2. Validate locally (no GPU)
 
@@ -106,12 +108,12 @@ bindi run campaign.json --workdir /work
 ```bash
 bindi generate campaign.json --workdir /work
 bindi curate campaign.json --workdir /work
-# Optional: bindi curate ... --bindcraft-rank  # delegate ranking to `bindcraft rank`
+# Optional: bindi curate ... --boltz-rank  # re-run BoltzGen filtering
 ```
 
-Set `BINDCRAFT_CMD` if the executable is not named `bindcraft`.
+Set `BOLTZGEN_CMD` if the executable is not named `boltzgen`.
 
-**Worker container** (build BindCraft2 image as `bindcraft:local` first):
+**Worker container** (installs BoltzGen via pip; GPU host required):
 
 ```bash
 docker build -f containers/Dockerfile -t bindi:local .
@@ -128,11 +130,11 @@ On success, treat **`gallery/`** (or the path in `policy.gallery`) as the primar
 gallery/
   index.json      # bindi.gallery.v1 manifest: entries, scores, structure paths,
                   #   plus claim, provenance, ensemble, benchmark, tooling (see below)
-  ranked.csv      # tabular shortlist (BindCraft2 columns + rank)
+  ranked.csv      # tabular shortlist (BoltzGen metrics + rank)
   structures/     # mmCIF copies when found under the campaign folder
 ```
 
-**Manifest fields to surface:** the output is a **relative ranking within this campaign only** (`claim`) — never an absolute affinity or kcal/mol number, and never a safety claim. `rank` is a **pass signal, not potency** (`rank_meaning`): BindCraft's metric predicts whether a design binds, not how tightly. The design step is **reproducible given a seed, not deterministic** (`reproducibility`: `seed`, `trajectories`). Every gallery carries five fixed `disclosures` (testing only / order from the published trial, not computed here / prediction present but unverified / identity and sign-off gates specified but unbuilt / no hazard screen applied), and is marked `release: false` with a `not_a_release` reason. `provenance` marks every design an in-silico hypothesis until confirmed experimentally. `benchmark` is a cited record whose honest status is `unchecked` — no correlation is fabricated. `tooling` lists the deployable-path tools, checked against `src/bindi/data/tool_tiers.toml`; `evaluation_only` tools (FEP+, PyRosetta, PBEE) must never be a dependency in a lab-facing path.
+**Manifest fields to surface:** the output is a **relative ranking within this campaign only** (`claim`) — never an absolute affinity or kcal/mol number, and never a safety claim. `rank` is a **pass signal, not potency** (`rank_meaning`): Boltz-2 confidence metrics reflect predicted complex quality, not measured affinity. The design step is **reproducible given a seed, not deterministic** (`reproducibility`: `seed`, `trajectories`). Every gallery carries five fixed `disclosures` (testing only / order from the published trial, not computed here / prediction present but unverified / identity and sign-off gates specified but unbuilt / no hazard screen applied), and is marked `release: false` with a `not_a_release` reason. `provenance` marks every design an in-silico hypothesis until confirmed experimentally. `benchmark` is a cited record whose honest status is `unchecked` — no correlation is fabricated. `tooling` lists the deployable-path tools, checked against `src/bindi/data/tool_tiers.toml`; `evaluation_only` tools (FEP+, PyRosetta, PBEE) must never be a dependency in a lab-facing path.
 
 **The multiverse ensemble is OFF by default** and unvalidated: by default nothing about it is written to the manifest and it does not reorder designs. Enable it only deliberately via `curation.ensemble: true` or `use_ensemble=True`; it then adds the `ensemble` block (`universes`, `disagreement_summary`, `triage`, per-design stats) and `provenance.ensemble_basis`.
 
@@ -143,7 +145,7 @@ Read `index.json` for programmatic handoff. Summarize for the user:
 - Paths to structures and sequences (`Binder_Sequence` when present)
 - Campaign folder (`manifest.campaign`) for traceability
 
-If `generate` failed, do not claim a curated shortlist; surface BindCraft2 stderr/exit code and whether partial outputs exist under `project_folder`.
+If `generate` failed, do not claim a curated shortlist; surface BoltzGen stderr/exit code and whether partial outputs exist under `project_folder`.
 
 ## Policy fields (quick reference)
 
@@ -151,14 +153,15 @@ If `generate` failed, do not claim a curated shortlist; surface BindCraft2 stder
 {
   "schema": "bindi.policy.v1",
   "query": "<design intent>",
-  "bindcraft": {
-    "target": "<BindCraft2 target id>",
-    "modality": "binder | VHH | ...",
-    "number_of_final_designs": 10,
+  "boltz": {
+    "design_spec": "campaigns/pdl1_miniprotein.yaml",
+    "protocol": "protein-anything",
+    "num_designs": 500,
+    "budget": 10,
     "project_folder": "results/<campaign>"
   },
   "curation": {
-    "rank_on": ["i_pDAE"],
+    "rank_on": ["design_to_target_iptm"],
     "top_n": 10
   },
   "gallery": "gallery"
@@ -182,20 +185,20 @@ gallery_path = outcome["curate"]["gallery"]
 
 ## Engineering constraints
 
-- **Minimum surface area:** do not fork BindCraft2 inside bindi; pass through `bindcraft` CLI and campaign JSON.
+- **Minimum surface area:** do not fork BoltzGen inside bindi; pass through the `boltzgen` CLI and design-spec YAML.
 - **Idempotent curation:** `curate` can rerun on the same `project_folder` to refresh the gallery after new designs land.
-- **No silent success:** non-zero `bindcraft design` exit codes raise; report them to the user.
-- **LoC efficiency:** extend behavior via policy JSON and BC2 options before adding Python.
+- **No silent success:** non-zero `boltzgen run` exit codes raise; report them to the user.
+- **LoC efficiency:** extend behavior via policy JSON and BoltzGen options before adding Python.
 
 ## Verification checklist
 
 Before marking the task done ([BAR.md](BAR.md) records what a green covers and what it does not):
 
-- [ ] `campaign` validates as `bindi.policy.v1` (or normalizes from bare BC2 JSON).
+- [ ] `campaign` validates as `bindi.policy.v1` (or normalizes from legacy campaign JSON).
 - [ ] `bindi run ... --dry-run` succeeds in CI-like environments, or GPU `bindi run` completed on the worker.
 - [ ] `gallery/index.json` has `schema: bindi.gallery.v1` and `entries` length ≤ `top_n`.
 - [ ] User receives ranked designs with scores and file paths, plus any caveats (dry-run, missing structures, metric choice).
 
 ## License note
 
-Bindi is MIT. BindCraft2 is a separate dependency with its own license; comply with both when deploying workers. Tool licence tiers live in `src/bindi/data/tool_tiers.toml`: tools marked `evaluation_only` (e.g. FEP+, PyRosetta, PBEE) are commercial or licence-restricted and may be used for evaluation only, never as a dependency in a deployable path. Add new tools by editing that data file.
+Bindi is MIT. BoltzGen is a separate dependency with its own license; comply with both when deploying workers. Tool licence tiers live in `src/bindi/data/tool_tiers.toml`: tools marked `evaluation_only` (e.g. FEP+, PyRosetta, PBEE) are commercial or licence-restricted and may be used for evaluation only, never as a dependency in a deployable path. Add new tools by editing that data file.

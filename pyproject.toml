@@ -13,7 +13,15 @@ classifiers = [
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
 ]
-dependencies = []
+dependencies = [
+  # Layer-2 interface descriptors. Floors here (library-level); the fleet's
+  # reproducible environment pins these exactly in
+  # deploy/requirements-fleet-env.txt, which is what the ghcr image and the
+  # content-address digest are built from.
+  "gemmi>=0.6.5",
+  "biopython>=1.83",
+  "numpy>=1.26",
+]
 
 [project.urls]
 Homepage = "https://github.com/wetwarehq/bindi"

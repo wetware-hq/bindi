@@ -1,0 +1,20 @@
+# Layer-2 interface-descriptor environment — EXACT pins, not floors.
+#
+# This file defines the content-address environment for the NYESO1-A0201 fleet's
+# layer-2 interface descriptor worker (ipSAE / min_ipSAE, shape complementarity).
+# The ghcr image built from deploy/fleet-env.Dockerfile is the content address;
+# a `>=` here would mean the digest no longer determines the descriptor numbers.
+# Therefore: == only. Resolved and install-verified on the box 2026-10-20
+# (CPython 3.13.5, linux x86_64); all versions also support CPython 3.11-3.13.
+#
+# Direct dependencies
+gemmi==0.7.5                      # CIF/structure parsing; token->residue mapping
+biopython==1.88                   # sequence/structure helpers
+numpy==2.4.6                      # PAE arrays (pae.npz); last line supporting py3.11
+shape-complementarity==0.2.0      # Lawrence-Colman Sc (PyO3 bindings to sc-rs), MIT
+#
+# Transitive runtime dependencies of shape-complementarity, pinned so the
+# resolved environment is fully determined by this file.
+pandas==3.0.6
+python-dateutil==2.9.0.post0
+six==1.17.0

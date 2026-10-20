@@ -350,3 +350,37 @@ def test_positive_fixture_cutoff_invariance_is_explained():
     # reported A->B value. Its worst interface PAE is below the lowest cutoff
     # tested, so its valid-pair set is identical at every cutoff above.
     assert float(block_ab[80].max()) < 5.0
+
+
+# --- campaign target reference (PDB 9NNF) -----------------------------------
+# Experimental cryo-EM structure of the NYESO1-A0201 target complex. It has no
+# PAE, so it is ground truth for the target, NOT an ipSAE positive control.
+# Johansen et al., Science 389, 380-385 (2025), doi:10.1126/science.adv0422.
+NYESO1_REFERENCE_CIF = ROOT / "fixtures" / "nyeso1_a0201_9nnf_reference.cif"
+NYESO1_EPITOPE = "SLLMWITQC"
+
+
+def test_nyeso1_reference_has_the_campaign_epitope():
+    """The committed ground-truth structure must really contain SLLMWITQC on 4 chains."""
+    parsed = parse_predicted_cif(NYESO1_REFERENCE_CIF)
+    counts = parsed.residue_counts
+    assert parsed.chain_order == ("A", "B", "C", "D"), parsed.chain_order
+    # binder NY1-B04, HLA-A*02:01 heavy chain, beta-2-microglobulin, peptide
+    assert counts == {"A": 141, "B": 276, "C": 100, "D": 9}, counts
+    assert counts["D"] == len(NYESO1_EPITOPE)
+    assert parsed.has_non_polymer is False
+    assert sum(counts.values()) == 526
+
+
+def test_nyeso1_reference_cannot_be_scored_without_pae():
+    """Guard the real boundary: an experimental structure has no PAE to score.
+
+    This is not a formality. It is the test that stops someone pairing the
+    ground-truth structure with an unrelated PAE matrix and reporting the
+    result as if the campaign target had been scored.
+    """
+    parsed = parse_predicted_cif(NYESO1_REFERENCE_CIF)
+    n_tokens = sum(parsed.residue_counts.values())
+    wrong_pae = np.zeros((n_tokens - 1, n_tokens - 1), dtype=float)
+    with pytest.raises((TokenAlignmentError, ValueError)):
+        score_predicted_complex(wrong_pae, parsed)

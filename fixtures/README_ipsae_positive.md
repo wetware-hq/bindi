@@ -57,3 +57,44 @@ this fixture pins.
 - **No pMHC content.** This is a generic two-chain complex. It says nothing
   about whether the thresholds used in campaign NYESO1-A0201 transfer to
   class I pMHC targets; those remain transferred, not calibrated.
+
+---
+
+# Campaign target reference: PDB 9NNF
+
+`nyeso1_a0201_9nnf_reference.cif` is the experimental cryo-EM structure of the
+exact complex campaign NYESO1-A0201 targets:
+
+> Cryo-EM structure of a de-novo designed binder NY1-B04 in complex with
+> HLA-A\*02:01 and NY-ESO-1-derived peptide SLLMWITQC
+> PDB [9NNF](https://www.rcsb.org/structure/9NNF), EMDB 49573, 3.8 Angstrom,
+> released 2025-07-23.
+
+Chains as parsed by gemmi:
+
+| Chain | Residues | What |
+|---|---|---|
+| A | 141 | de novo designed binder NY1-B04 |
+| B | 276 | HLA class I heavy chain, A alpha |
+| C | 100 | beta-2-microglobulin |
+| D | 9 | `SLLMWITQC` (NY-ESO-1 157-165) |
+
+Primary citation: Johansen, K. H. et al. De novo-designed pMHC binders
+facilitate T cell-mediated cytotoxicity toward cancer cells. *Science* 389,
+380-385 (2025). DOI: 10.1126/science.adv0422 (PMID: 40705893). This is the
+peer-reviewed version of bioRxiv 10.1101/2024.11.27.624796, which the campaign
+spec still cites as a preprint; Crossref records the preprint relation
+explicitly.
+
+## What this fixture is NOT
+
+**It is not an ipSAE positive control.** An experimental structure has no
+predicted aligned error, and the ipSAE worker scores predictions. Scoring the
+campaign target with this worker requires a *predicted* structure of this
+complex with its PAE matrix, which means a Boltz submission, which is gated by
+the in-graph approval node. Nothing has been submitted and nothing has been
+spent.
+
+It is committed here as ground truth: the structure any future prediction of
+this target should be compared against, and the only file in this repository
+that contains the actual campaign epitope.

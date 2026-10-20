@@ -15,6 +15,7 @@ classifiers = [
 ]
 dependencies = [
   "biopython>=1.83",
+  "numpy>=1.26",
 ]
 
 [project.urls]

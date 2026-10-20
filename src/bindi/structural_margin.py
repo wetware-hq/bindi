@@ -191,7 +191,7 @@ class LiveBindCraftModalClient:
             ) from exc
 
         os.environ.setdefault(MODAL_TOKEN_ENV, self._token)
-        remote = modal.Function.lookup(modal_app_name(), modal_function_name())
+        remote = modal.Function.from_name(modal_app_name(), modal_function_name())
         payload = {
             "mutant_peptide": mutant_peptide.upper(),
             "wild_type_peptide": wild_type_peptide.upper(),
@@ -200,7 +200,7 @@ class LiveBindCraftModalClient:
             "pair_id": pair_id,
             "pair_role": pair_role,
         }
-        raw = remote.call(payload)
+        raw = remote.remote(payload)
         if not isinstance(raw, dict):
             raise RuntimeError(f"unexpected Modal response type: {type(raw)!r}")
         prov = raw.get("provenance") or {}

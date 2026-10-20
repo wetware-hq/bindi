@@ -276,3 +276,111 @@ def test_cli_round_trip_npz(tmp_path: Path):
     assert cli_out["ordered"] == ref["ordered"]
     assert cli_out["pairs"] == ref["pairs"]
     assert cli_out["plddt"]["present"] is True
+
+
+# --- positive control -------------------------------------------------------
+# Expected values are NOT taken from this implementation. They are the output of
+# the independent reference implementation (Dunbrack ipsae.py) on the same two
+# files at PAE cutoff 10 / distance cutoff 10, committed alongside the fixture as
+# fixtures/ipsae_positive_twochain_reference_ipsae_10_10.txt:
+#     A -> B  ipSAE 0.852971
+#     B -> A  ipSAE 0.838137
+# The reference prints 6 decimal places, so the tolerance is 5e-7: tight enough
+# that any real change in the scoring path fails, loose enough to absorb the
+# reference's own printed precision.
+POSITIVE_FIXTURE_CIF = ROOT / "fixtures" / "ipsae_positive_twochain.cif"
+POSITIVE_FIXTURE_PAE = ROOT / "fixtures" / "ipsae_positive_twochain_pae.npz"
+REFERENCE_IPSAE_A_TO_B = 0.852971
+REFERENCE_IPSAE_B_TO_A = 0.838137
+REFERENCE_TOLERANCE = 5e-7
+
+
+def test_positive_fixture_matches_reference_implementation():
+    """The shipped positive control must agree with the reference ipSAE to 6 dp."""
+    result = score_from_paths(str(POSITIVE_FIXTURE_PAE), str(POSITIVE_FIXTURE_CIF))
+
+    assert [c["chain_id"] for c in result["chains"]] == ["A", "B"]
+    assert [c["length"] for c in result["chains"]] == [100, 69]
+    assert result["n_tokens"] == 169
+
+    assert result["ordered"]["A->B"] == pytest.approx(
+        REFERENCE_IPSAE_A_TO_B, abs=REFERENCE_TOLERANCE
+    )
+    assert result["ordered"]["B->A"] == pytest.approx(
+        REFERENCE_IPSAE_B_TO_A, abs=REFERENCE_TOLERANCE
+    )
+
+    pair = result["pairs"]["A|B"]
+    assert pair["min_ipsae"] == pytest.approx(
+        min(REFERENCE_IPSAE_A_TO_B, REFERENCE_IPSAE_B_TO_A), abs=REFERENCE_TOLERANCE
+    )
+    # min() must pick B->A here, i.e. the conservative direction, not the larger one.
+    assert pair["min_ipsae"] == pair["ipsae_B_to_A"]
+    assert pair["min_ipsae"] < pair["ipsae_A_to_B"]
+
+
+def test_positive_fixture_reports_no_plddt():
+    """Constant B-factors are a Boltz placeholder, not pLDDT, and must be refused."""
+    result = score_from_paths(str(POSITIVE_FIXTURE_PAE), str(POSITIVE_FIXTURE_CIF))
+    assert result["plddt"]["present"] is False
+    assert result["plddt"]["complex_plddt"] is None
+    assert result["plddt"]["interface_plddt"] is None
+
+
+def test_positive_fixture_cutoff_invariance_is_explained():
+    """Score is cutoff-invariant here ONLY because the best row sits below every cutoff.
+
+    This documents a known limit of the fixture: it cannot regression-test
+    --pae-cutoff. The assertion on the best row's maximum interface PAE is what
+    makes the invariance a fact rather than a coincidence.
+    """
+    pae = load_pae_npz(str(POSITIVE_FIXTURE_PAE))
+    block_ab = pae[0:100, 100:169]
+
+    scores = {}
+    for cutoff in (5.0, 10.0, 15.0, 20.0):
+        result = score_from_paths(
+            str(POSITIVE_FIXTURE_PAE), str(POSITIVE_FIXTURE_CIF), pae_cutoff=cutoff
+        )
+        scores[cutoff] = result["ordered"]["A->B"]
+
+    assert len(set(scores.values())) == 1, scores
+
+    # Row 80 is the argmax of the by-residue scores, i.e. the row that sets the
+    # reported A->B value. Its worst interface PAE is below the lowest cutoff
+    # tested, so its valid-pair set is identical at every cutoff above.
+    assert float(block_ab[80].max()) < 5.0
+
+
+# --- campaign target reference (PDB 9NNF) -----------------------------------
+# Experimental cryo-EM structure of the NYESO1-A0201 target complex. It has no
+# PAE, so it is ground truth for the target, NOT an ipSAE positive control.
+# Johansen et al., Science 389, 380-385 (2025), doi:10.1126/science.adv0422.
+NYESO1_REFERENCE_CIF = ROOT / "fixtures" / "nyeso1_a0201_9nnf_reference.cif"
+NYESO1_EPITOPE = "SLLMWITQC"
+
+
+def test_nyeso1_reference_has_the_campaign_epitope():
+    """The committed ground-truth structure must really contain SLLMWITQC on 4 chains."""
+    parsed = parse_predicted_cif(NYESO1_REFERENCE_CIF)
+    counts = parsed.residue_counts
+    assert parsed.chain_order == ("A", "B", "C", "D"), parsed.chain_order
+    # binder NY1-B04, HLA-A*02:01 heavy chain, beta-2-microglobulin, peptide
+    assert counts == {"A": 141, "B": 276, "C": 100, "D": 9}, counts
+    assert counts["D"] == len(NYESO1_EPITOPE)
+    assert parsed.has_non_polymer is False
+    assert sum(counts.values()) == 526
+
+
+def test_nyeso1_reference_cannot_be_scored_without_pae():
+    """Guard the real boundary: an experimental structure has no PAE to score.
+
+    This is not a formality. It is the test that stops someone pairing the
+    ground-truth structure with an unrelated PAE matrix and reporting the
+    result as if the campaign target had been scored.
+    """
+    parsed = parse_predicted_cif(NYESO1_REFERENCE_CIF)
+    n_tokens = sum(parsed.residue_counts.values())
+    wrong_pae = np.zeros((n_tokens - 1, n_tokens - 1), dtype=float)
+    with pytest.raises((TokenAlignmentError, ValueError)):
+        score_predicted_complex(wrong_pae, parsed)

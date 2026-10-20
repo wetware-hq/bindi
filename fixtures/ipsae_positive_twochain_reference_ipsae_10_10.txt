@@ -1,0 +1,6 @@
+
+Chn1 Chn2  PAE Dist  Type   ipSAE    ipSAE_d0chn ipSAE_d0dom  ipTM_af  ipTM_d0chn     pDockQ     pDockQ2    LIS       n0res  n0chn  n0dom   d0res   d0chn   d0dom  nres1   nres2   dist1   dist2  Model
+A    B     10   10   asym  0.852971    0.940101    0.938770    0.000    0.940101      0.0183     0.0073     0.6779      69    169    165    2.89    4.85    4.79     96      69      65      56   twochain
+B    A     10   10   asym  0.838137    0.896465    0.896465    0.000    0.896465      0.0183     0.0073     0.7529     100    169    169    3.65    4.85    4.85     69     100      56      65   twochain
+A    B     10   10   max   0.852971    0.940101    0.938770    0.000    0.940101      0.0183     0.0073     0.7154      69    169    165    2.89    4.85    4.79    100      69      65      56   twochain
+

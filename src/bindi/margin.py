@@ -8,6 +8,10 @@ scorer. With no scorer injected it returns
 `status: "not_computed"` and names what is missing; the design hold reads that status and
 refuses to start.
 
+`bindi.ipsae_margin` is registered here as a *candidate* structural scorer
+(`CANDIDATE_STRUCTURAL_SCORERS`): structure-derived, CPU-only, and explicitly not signed
+off. Registering it wires the plumbing and changes nothing about whether the stage passes.
+
 A real scorer is a config swap, not a code change: pass a callable (or set
 `BINDI_MARGIN_SCORER` to an `module:function` path) that takes (peptide, design) and
 returns a float pass-signal score. The margin is then
@@ -21,6 +25,7 @@ import importlib
 import os
 from typing import Any, Callable
 
+from . import ipsae_margin
 from .provenance import sequence_text
 
 SCORER_ENV = "BINDI_MARGIN_SCORER"
@@ -46,6 +51,18 @@ SEQUENCE_SCORER_IDS = frozenset({"class_bucket_v1", "blosum_position_v2"})
 #: no scorer id this module may accept. This set stays empty until a threshold is signed.
 SIGNED_STRUCTURAL_SCORER_IDS: frozenset[str] = frozenset()
 
+#: Candidate structural scorers: structure-derived, selectable, and NOT signed off.
+#: Being here means the plumbing exists and the quantity is named honestly. It does not
+#: mean the scorer can clear the margin stage — that requires its id to appear in
+#: `SIGNED_STRUCTURAL_SCORER_IDS`, which is empty and is signed content, not a code edit.
+#: Each entry carries its own evidence level and a pointer to the threshold proposal.
+CANDIDATE_STRUCTURAL_SCORERS: dict[str, dict[str, Any]] = {
+    ipsae_margin.SCORER_ID: ipsae_margin.registration(),
+}
+
+#: Ids of structure-derived scorers that exist at all. Disjoint from the signed set.
+CANDIDATE_STRUCTURAL_SCORER_IDS = frozenset(CANDIDATE_STRUCTURAL_SCORERS)
+
 MISSING_REQUIREMENT = (
     "a structural scorer whose margin threshold has been signed off for the Boltz-based "
     "pipeline"
@@ -60,6 +77,22 @@ THRESHOLD_NOT_ESTABLISHED_REASON = (
     "never clear the margin stage. Until such a threshold is signed, the immunology margin "
     "stage refuses by construction and no margin number is written."
 )
+
+
+def candidate_structural_scorer(scorer_id: str) -> dict[str, Any]:
+    """A candidate's registry entry, or a refusal naming the candidates that exist."""
+    try:
+        return CANDIDATE_STRUCTURAL_SCORERS[scorer_id]
+    except KeyError:
+        raise ValueError(
+            f"unknown structural scorer {scorer_id!r}; candidates are "
+            f"{sorted(CANDIDATE_STRUCTURAL_SCORERS)} and none has a signed threshold"
+        ) from None
+
+
+def is_signed_structural_scorer(scorer_id: str | None) -> bool:
+    """True only for a scorer whose margin threshold has been signed off. Always False today."""
+    return scorer_id in SIGNED_STRUCTURAL_SCORER_IDS
 
 
 def load_scorer(spec: str | None = None) -> Callable[[str, str], float] | None:
@@ -93,6 +126,13 @@ def _threshold_fields(
     }
     if scorer_id in SEQUENCE_SCORER_IDS or evidence_level == "sequence_level_not_structure_validated":
         fields["threshold_scorer_class"] = "sequence_level"
+    elif scorer_id in CANDIDATE_STRUCTURAL_SCORER_IDS:
+        # A candidate is structure-derived and still unsigned. Saying so is the whole point:
+        # the record must not read as though a structural scorer settled anything.
+        fields["threshold_scorer_class"] = "candidate_structural_not_signed"
+        fields["threshold_proposal"] = CANDIDATE_STRUCTURAL_SCORERS[scorer_id][
+            "threshold_proposal"
+        ]
     elif scorer_id:
         fields["threshold_scorer_class"] = "unrecognised_scorer"
     return fields

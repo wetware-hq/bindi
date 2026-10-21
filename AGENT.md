@@ -66,6 +66,7 @@ Do not recruit bindi for targets or modalities outside BoltzGen’s protocols wi
 Translate the user query into a **`bindi.policy.v1`** document:
 
 - **`query`** — one-sentence design intent (audit trail for humans).
+- **Margin scorers** — `ipsae_boltz_cpu_v1` (ipSAE from a Boltz run's own `pae.npz` and predicted CIF) is a **candidate** structural scorer: selectable, structure-derived, CPU-only, and with no signed threshold, so it cannot clear the margin stage. Do not present a margin computed from it as evidence of binding.
 - **`generator`** — always `boltzgen`. Boltz is the generator; `normalize_policy` writes this key so no policy leaves the generator implicit.
 - **`boltz`** — BoltzGen fields: `design_spec` (YAML path), `protocol`, `num_designs`, `budget` / `number_of_final_designs`, `project_folder`, plus optional `alpha`, `devices`, `seed`. A legacy `bindcraft` block on an existing policy file is still read and migrated onto `boltz` (with a `DeprecationWarning`), for backwards compatibility only; never write that key.
 - **`curation`** — `rank_on` (metric column names, default `["design_to_target_iptm"]`), `top_n` (shortlist size). The multiverse ensemble is **off by default**; enable it with `ensemble: true` (and optional `universes` scorer columns, defaulting to the higher-better metrics present when at least two exist).

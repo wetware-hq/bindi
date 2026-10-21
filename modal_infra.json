@@ -12,7 +12,8 @@
     "pip_install": [
       "biopython>=1.83",
       "gemmi>=0.6.5",
-      "numpy>=1.26"
+      "numpy>=1.26",
+      "pyyaml>=6.0"
     ],
     "local_files": {
       "modal_infra.json": "/bindi/modal_infra.json"

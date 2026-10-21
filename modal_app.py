@@ -27,7 +27,26 @@ import pathlib
 import modal
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
-INFRA_PATH = REPO_ROOT / "modal_infra.json"
+
+#: Where the image puts the repo (see `local_dirs`/`local_files` in modal_infra.json). The app
+#: module itself is placed at /root by Modal, so inside a container the config does NOT sit
+#: beside this file: it has to be read from the path the image baked it to, or the module fails
+#: to import and the function never starts.
+CONTAINER_ROOT = pathlib.Path("/bindi")
+
+
+def _infra_path() -> pathlib.Path:
+    """The config, found locally when deploying and in the image when running."""
+    for candidate in (REPO_ROOT / "modal_infra.json", CONTAINER_ROOT / "modal_infra.json"):
+        if candidate.is_file():
+            return candidate
+    raise FileNotFoundError(
+        "modal_infra.json not found beside modal_app.py or at "
+        f"{CONTAINER_ROOT / 'modal_infra.json'}; the image must carry it (image.local_files)"
+    )
+
+
+INFRA_PATH = _infra_path()
 
 #: Read at import time. The decorators below are parameterised from this document.
 INFRA: dict = json.loads(INFRA_PATH.read_text(encoding="utf-8"))

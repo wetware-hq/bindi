@@ -60,3 +60,27 @@ def test_modal_app_reads_infra_at_import_time_and_pins_its_hash():
     assert "**resources(" in source, "decorators must be parameterised from modal_infra.json"
     for name in _infra()["functions"]:
         assert f'resources("{name}")' in source, f"{name} is declared but never deployed"
+
+
+def test_app_can_find_the_config_at_the_path_the_image_bakes_it_to():
+    """A container imports modal_app.py from /root, not from the repo root.
+
+    The image puts the config under its own remote path, so reading it relative to
+    ``__file__`` alone fails at import and the function dies before it runs. This pins the
+    fallback and pins that it agrees with the remote path the image actually uses.
+    """
+    source = APP.read_text(encoding="utf-8")
+    remote = _infra()["image"]["local_files"]["modal_infra.json"]
+    container_root = str(Path(remote).parent)
+    assert f'CONTAINER_ROOT = pathlib.Path("{container_root}")' in source, (
+        f"modal_app.py must fall back to {remote}, where the image puts the config"
+    )
+    assert "def _infra_path()" in source
+    assert "candidate.is_file()" in source
+
+
+def test_the_image_installs_what_bindi_imports():
+    """bindi reads hosted design specs with pyyaml; a missing dep is an import-time death."""
+    pins = [p.split(">=")[0].split("==")[0].lower() for p in _infra()["image"]["pip_install"]]
+    for required in ("biopython", "gemmi", "numpy", "pyyaml"):
+        assert required in pins, f"{required} is imported by bindi but not in the image"

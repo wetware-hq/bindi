@@ -4,10 +4,21 @@
   "title": "bindi.immunology_case.v1",
   "description": "A synthetic clinical-immunology patient case record. The clinical half (physician) fills it; bindi reads the target from it instead of a fixture. Synthetic patients only (SYNTH- ids). A record is a design target only when signature.signed is true; an unsigned record is a PLACEHOLDER and the design hold stays in force.",
   "type": "object",
-  "required": ["schema", "case_id", "presentation", "hla", "neoantigen", "consent", "data_class", "signature"],
+  "required": [
+    "schema",
+    "case_id",
+    "presentation",
+    "hla",
+    "neoantigen",
+    "consent",
+    "data_class",
+    "signature"
+  ],
   "additionalProperties": true,
   "properties": {
-    "schema": {"const": "bindi.immunology_case.v1"},
+    "schema": {
+      "const": "bindi.immunology_case.v1"
+    },
     "case_id": {
       "type": "string",
       "description": "Synthetic case id. Must start with SYNTH- so a real patient id cannot be mistaken for one.",
@@ -16,27 +27,61 @@
     "presentation": {
       "type": "object",
       "description": "Plain-words clinical picture. No free-text identifiers.",
-      "required": ["summary", "diagnosis", "stage"],
+      "required": [
+        "summary",
+        "diagnosis",
+        "stage"
+      ],
       "properties": {
-        "summary": {"type": "string", "minLength": 1},
-        "diagnosis": {"type": "string", "minLength": 1},
-        "stage": {"type": "string", "minLength": 1},
-        "prior_therapy": {"type": "array", "items": {"type": "string"}},
-        "ecog": {"type": "integer", "minimum": 0, "maximum": 5}
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "diagnosis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "prior_therapy": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ecog": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        }
       }
     },
     "hla": {
       "type": "object",
       "description": "HLA typing. class_i alleles are what a peptide-MHC design is presented on.",
-      "required": ["class_i"],
+      "required": [
+        "class_i"
+      ],
       "properties": {
         "class_i": {
           "type": "array",
           "minItems": 1,
-          "items": {"type": "string", "pattern": "^HLA-[ABC]\\*[0-9]{2}:[0-9]{2}$"}
+          "items": {
+            "type": "string",
+            "pattern": "^HLA-[ABC]\\*[0-9]{2}:[0-9]{2}$"
+          }
         },
-        "class_ii": {"type": "array", "items": {"type": "string"}},
-        "typing_method": {"type": "string"},
+        "class_ii": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "typing_method": {
+          "type": "string"
+        },
         "restriction_allele": {
           "type": "string",
           "description": "The class I allele the design is restricted to; must appear in class_i.",
@@ -46,50 +91,197 @@
     },
     "neoantigen": {
       "type": "object",
-      "description": "The mutant peptide and its wild-type counterpart. Both are required: the Scientist's condition is that any design is scored against the wild-type complex with a stated margin, not the mutant alone.",
-      "required": ["mutant_peptide", "wild_type_peptide", "gene", "variant"],
+      "description": "The on-target peptide and, for a private neoantigen, its wild-type counterpart. For antigen_class 'private_neoantigen' (the default when the field is absent) both are required: the Scientist's condition is that any design is scored against the wild-type complex with a stated margin, not the mutant alone. For antigen_class 'shared_cancer_testis' there is no variant and so no distinct wild-type counterpart - the self peptide is the identical sequence - so wild_type_peptide must be an explicit absence {absent: true, absent_reason: ...} carrying NO sequence, and the record must additionally declare specificity_panel. That branch is stricter, not looser: a record with no wild-type sequence can never produce a stated wild-type margin, so the design hold stays in force for it in every case.",
+      "required": [
+        "mutant_peptide",
+        "wild_type_peptide",
+        "gene",
+        "variant"
+      ],
       "properties": {
-        "gene": {"type": "string", "minLength": 1},
-        "variant": {"type": "string", "minLength": 1, "description": "e.g. p.G12D (HGVS protein)"},
-        "mutant_peptide": {"$ref": "sequence_field.v1.schema.json"},
-        "wild_type_peptide": {"$ref": "sequence_field.v1.schema.json"},
-        "mutated_position": {"type": "integer", "minimum": 1},
-        "source": {"type": "string", "description": "How the variant was called. 'invented' for synthetic cases."}
+        "gene": {
+          "type": "string",
+          "minLength": 1
+        },
+        "variant": {
+          "type": "string",
+          "minLength": 1,
+          "description": "e.g. p.G12D (HGVS protein)"
+        },
+        "mutant_peptide": {
+          "$ref": "sequence_field.v1.schema.json"
+        },
+        "wild_type_peptide": {
+          "description": "A sequence field for a private neoantigen; for a shared cancer-testis antigen, an explicit absence object instead.",
+          "oneOf": [
+            {
+              "$ref": "sequence_field.v1.schema.json"
+            },
+            {
+              "type": "object",
+              "required": [
+                "absent",
+                "absent_reason"
+              ],
+              "properties": {
+                "absent": {
+                  "const": true
+                },
+                "absent_reason": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
+        "mutated_position": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "source": {
+          "type": "string",
+          "description": "How the variant was called. 'invented' for synthetic cases."
+        },
+        "antigen_class": {
+          "type": "string",
+          "enum": [
+            "private_neoantigen",
+            "shared_cancer_testis"
+          ],
+          "default": "private_neoantigen",
+          "description": "Absent means private_neoantigen, so records written before this field existed are unaffected."
+        }
       }
     },
     "consent": {
       "type": "object",
       "description": "What the patient agreed to. A design run is refused unless design_use is true.",
-      "required": ["obtained", "design_use", "scope"],
+      "required": [
+        "obtained",
+        "design_use",
+        "scope"
+      ],
       "properties": {
-        "obtained": {"type": "boolean"},
-        "design_use": {"type": "boolean", "description": "Consent covers in-silico design against this patient's variant."},
-        "scope": {"type": "string", "enum": ["research_only", "clinical_care", "none"]},
-        "date": {"type": "string"},
-        "witness": {"type": "string"}
+        "obtained": {
+          "type": "boolean"
+        },
+        "design_use": {
+          "type": "boolean",
+          "description": "Consent covers in-silico design against this patient's variant."
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "research_only",
+            "clinical_care",
+            "none"
+          ]
+        },
+        "date": {
+          "type": "string"
+        },
+        "witness": {
+          "type": "string"
+        }
       }
     },
     "data_class": {
       "type": "object",
       "description": "Sensitivity and release class of the record.",
-      "required": ["synthetic", "sensitivity", "release"],
+      "required": [
+        "synthetic",
+        "sensitivity",
+        "release"
+      ],
       "properties": {
-        "synthetic": {"const": true, "description": "bindi refuses any record not marked synthetic."},
-        "sensitivity": {"type": "string", "enum": ["public", "internal", "sensitive"]},
-        "release": {"type": "string", "enum": ["not_a_release", "released"]},
-        "retention": {"type": "string"}
+        "synthetic": {
+          "const": true,
+          "description": "bindi refuses any record not marked synthetic."
+        },
+        "sensitivity": {
+          "type": "string",
+          "enum": [
+            "public",
+            "internal",
+            "sensitive"
+          ]
+        },
+        "release": {
+          "type": "string",
+          "enum": [
+            "not_a_release",
+            "released"
+          ]
+        },
+        "retention": {
+          "type": "string"
+        }
       }
     },
     "signature": {
       "type": "object",
       "description": "Clinical sign-off. signed=false means PLACEHOLDER: the design hold stays in force and no real design run may start.",
-      "required": ["signed"],
+      "required": [
+        "signed"
+      ],
       "properties": {
-        "signed": {"type": "boolean"},
-        "signed_by": {"type": "string"},
-        "role": {"type": "string"},
-        "signed_at": {"type": "string"},
-        "placeholder_reason": {"type": "string"}
+        "signed": {
+          "type": "boolean"
+        },
+        "signed_by": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "signed_at": {
+          "type": "string"
+        },
+        "placeholder_reason": {
+          "type": "string"
+        }
+      }
+    },
+    "specificity_panel": {
+      "type": "object",
+      "description": "Required for antigen_class 'shared_cancer_testis'. The endpoint that replaces mutant-minus-wild-type: on-target minus best decoy across the negative-design panel, with the wild-type/self peptide a mandatory panel member. A population-level safety endpoint, because the hazard is a binder that engages invariant HLA framework and therefore binds in every patient carrying the restricting allele regardless of their tumour.",
+      "required": [
+        "endpoint",
+        "self_peptide_in_panel",
+        "panel_reference"
+      ],
+      "additionalProperties": true,
+      "properties": {
+        "endpoint": {
+          "const": "on_target_minus_best_decoy"
+        },
+        "endpoint_rationale": {
+          "type": "string"
+        },
+        "self_peptide_in_panel": {
+          "const": true
+        },
+        "panel_reference": {
+          "type": "string",
+          "minLength": 1
+        },
+        "decoy_peptides": {
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          }
+        },
+        "decoy_peptides_status": {
+          "type": "string"
+        },
+        "negative_design_residue_panel": {
+          "type": "string"
+        }
       }
     }
   }

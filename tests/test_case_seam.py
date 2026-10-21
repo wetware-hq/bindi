@@ -361,11 +361,15 @@ def test_placeholder_campaign_resolves_its_target_from_the_case_record(monkeypat
     """The real run is a config swap: `case` points at a record, not at code."""
     monkeypatch.chdir(ROOT)
     policy = json.loads((ROOT / "campaigns" / "neoantigen_placeholder.json").read_text(encoding="utf-8"))
-    assert policy["case"].endswith("immunology_case_PLACEHOLDER.json")
+    # Rewritten 2026-10-21: Mathew's decision was to make the case record match the
+    # campaign rather than bend the campaign to the retired placeholder fixture, so the
+    # campaign's case is now the NY-ESO-1 record carrying the peptide actually designed
+    # against. The seam being tested is unchanged: `case` points at a record, not at code.
+    assert policy["case"].endswith("immunology_case_NYESO1_A0201.json")
     assert "target" not in policy["boltz"], (
         "a case-driven campaign must not also hard-code a fixture target"
     )
     target = case_mod.resolve_target(policy)
     assert target["source"] == "case_record"
-    assert target["case_id"] == "SYNTH-IMM-001"
+    assert target["case_id"] == "SYNTH-NYESO1-A0201"
     assert case_mod.design_hold_reasons(target), "the hold must still be in force"

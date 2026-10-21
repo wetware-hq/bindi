@@ -53,6 +53,22 @@ WHAT_IT_DOES_NOT_MEASURE = (
     "all. No experimental anchor exists for it in this repository."
 )
 
+#: The caveat that must travel with every record carrying an ipSAE-derived number.
+#: Chief Scientist / Mathew, 2026-10-21: recorded in output wording, not only in docs.
+CAVEAT = (
+    "ipSAE caveat: this repository contains no orthogonal re-predictor and no experimental "
+    "anchor for ipSAE, so its error is peptide-dependent and does NOT cancel under "
+    "subtraction. Any threshold ever signed off this quantity is provisional until wet-lab "
+    "confirmation, and any number derived from it is one model's confidence in its own "
+    "predicted geometry, not a measurement of binding."
+)
+
+#: Units of the quantity, for records that carry one.
+UNITS = (
+    "ipSAE (Dunbrack-lab interface PAE, dimensionless 0-1); a prediction-confidence score, "
+    "never an affinity"
+)
+
 #: PAE cutoff `bindi.ipsae` uses when deciding which residue pairs count as interface. A
 #: method parameter of the score itself, not a threshold on the margin: it decides nothing
 #: about whether a design passes.
@@ -161,6 +177,8 @@ def registration() -> dict[str, Any]:
         "inputs": ["pae.npz", "*_predicted.cif"],
         "what_it_measures": WHAT_IT_MEASURES,
         "what_it_does_not_measure": WHAT_IT_DOES_NOT_MEASURE,
+        "caveat": CAVEAT,
+        "units": UNITS,
         "threshold_status": THRESHOLD_STATUS,
         "threshold_proposal": THRESHOLD_PROPOSAL,
         "signed_off": False,

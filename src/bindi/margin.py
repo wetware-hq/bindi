@@ -43,6 +43,22 @@ NOT_COMPUTED_REASON = (
     "margin stage only when that scorer's threshold has been signed off."
 )
 
+#: The endpoint a shared-antigen campaign declares instead of mutant-minus-wild-type.
+#: Mathew, 2026-10-21: for a neoantigen binder the clinical hazard is a binder that engages
+#: invariant HLA framework and therefore binds in every HLA-A*02:01 patient regardless of
+#: their tumour, so the endpoint that matters is on-target minus best decoy across the
+#: negative-design panel. bindi has no panel-scoring stage, so declaring it refuses.
+PANEL_ENDPOINT = "on_target_minus_best_decoy"
+
+PANEL_ENDPOINT_NOT_COMPUTED_REASON = (
+    "The case declares the specificity endpoint on_target_minus_best_decoy: the margin that "
+    "matters for this target is the on-target score minus the best score across the "
+    "negative-design panel, with the wild-type/self peptide a mandatory member of that "
+    "panel. That is a population-level safety endpoint, not a single-pair one, and bindi "
+    "has no panel-scoring stage: no panel margin was computed, no number was substituted "
+    "for one, and no threshold for such a margin has been signed off."
+)
+
 SEQUENCE_SCORER_IDS = frozenset({"class_bucket_v1", "blosum_position_v2"})
 
 #: No structural scorer is recognised. BindCraft-on-Modal was the only scorer the signed
@@ -133,6 +149,11 @@ def _threshold_fields(
         fields["threshold_proposal"] = CANDIDATE_STRUCTURAL_SCORERS[scorer_id][
             "threshold_proposal"
         ]
+        # Chief Scientist / Mathew, 2026-10-21: the caveat lives in the output wording, not
+        # only in the documentation. Any record carrying a number from this scorer carries
+        # the statement that its error does not cancel under subtraction and that any
+        # threshold signed off it would be provisional until wet-lab confirmation.
+        fields["evidence_caveat"] = CANDIDATE_STRUCTURAL_SCORERS[scorer_id]["caveat"]
     elif scorer_id:
         fields["threshold_scorer_class"] = "unrecognised_scorer"
     return fields
@@ -164,6 +185,31 @@ def score_wild_type_margin(
     }
     if evidence_level:
         record["evidence_level"] = evidence_level
+
+    if target.get("margin_endpoint") == PANEL_ENDPOINT:
+        # Declared endpoint beats the pair framing: refuse explicitly rather than reporting
+        # "not applicable", which would read as "no requirement here".
+        record["rule"] = (
+            "margin = on_target_complex_score - best_decoy_complex_score across the "
+            "negative-design panel (wild-type/self peptide mandatory in the panel), stated "
+            "per design"
+        )
+        record["margin_endpoint"] = PANEL_ENDPOINT
+        record["endpoint_is"] = (
+            "a population-level safety endpoint: the hazard is a binder that engages "
+            "invariant HLA framework and so binds in every patient carrying the restricting "
+            "allele, regardless of their tumour"
+        )
+        record["status"] = "not_computed"
+        record["reason"] = PANEL_ENDPOINT_NOT_COMPUTED_REASON
+        if target.get("wild_type_peptide_absent_reason"):
+            record["wild_type_peptide_absent_reason"] = target[
+                "wild_type_peptide_absent_reason"
+            ]
+        record.update(
+            _threshold_fields(scorer_id=scorer_id, evidence_level=record.get("evidence_level"))
+        )
+        return record
 
     if not mutant or not wild:
         record["status"] = "not_applicable"

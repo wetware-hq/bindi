@@ -45,13 +45,29 @@ def test_spec_describes_the_case_target():
     assert binder["entities"][0]["value"] == "60..100"
 
 
-def test_spec_carries_no_invented_negative_design_and_no_campaign_size():
+def test_the_negative_design_panel_is_the_selected_one_and_no_campaign_size_is_set():
+    """Rewritten 2026-10-21: the panel is no longer absent, it is CHOSEN, by Mathew.
+
+    It was previously an error for the spec to carry a non_binding_residues panel at all,
+    because picking one was an unmade scientific decision. Mathew made it on 2026-10-21,
+    accepting OD-2's recommendation of the TARGETED panel. What the test now pins is that
+    the panel in the spec is exactly that panel and not an invented one: the residues are
+    the source document's, the restriction triad is left contactable, and the peptide
+    chain is untouched. Campaign size is still Mathew's to set and still absent.
+    """
     spec = _spec()
-    for entity in spec["target"]["entities"]:
-        assert "non_binding_residues" not in entity, (
-            "a non_binding_residues panel is a safety-relevant scientific choice awaiting "
-            "sign-off; it must not be invented in the spec"
-        )
+    chains = {e["chain_ids"][0]: e for e in spec["target"]["entities"]}
+    expected_a = (
+        list(range(56, 62))
+        + list(range(76, 84))
+        + list(range(137, 149))
+        + list(range(166, 180))
+        + list(range(180, 275))
+    )
+    assert chains["A"]["non_binding_residues"] == expected_a
+    assert chains["B"]["non_binding_residues"] == list(range(99))
+    assert "non_binding_residues" not in chains["C"]
+    assert not {64, 68, 154} & set(expected_a), "restriction triad stays contactable"
     assert "num_proteins" not in spec, "campaign size is the policy's, and Mathew's, to set"
     assert "global_design_filters" not in spec
 
@@ -59,12 +75,22 @@ def test_spec_carries_no_invented_negative_design_and_no_campaign_size():
 def test_spec_and_policy_record_what_still_needs_mathew():
     text = SPEC_PATH.read_text(encoding="utf-8")
     assert "NEEDS MATHEW" in text
-    for topic in ("CASE RECORD MISMATCH", "non_binding_residues", "CAMPAIGN SIZE"):
+    # The case-record mismatch and the absent panel were resolved on 2026-10-21; the spec
+    # must still record HOW they were resolved, and what is still outstanding.
+    for topic in (
+        "CASE RECORD: RESOLVED",
+        "NEGATIVE DESIGN: SELECTED",
+        "non_binding_residues",
+        "CAMPAIGN SIZE",
+        "JUDGEMENT, not verified",
+        "STILL OUTSTANDING",
+    ):
         assert topic in text
     assert "SUBMITTING THIS SPEC SPENDS MONEY" in text
     policy = json.loads(POLICY_PATH.read_text(encoding="utf-8"))
     assert policy["_needs_mathew"], "the policy must carry the unresolved questions too"
-    assert any("mismatch" in note.lower() for note in policy["_needs_mathew"])
+    assert any("UNSIGNED" in note for note in policy["_needs_mathew"])
+    assert any("sign-off is still outstanding" in note for note in policy["_needs_mathew"])
 
 
 def test_designed_chain_is_the_only_designed_region():

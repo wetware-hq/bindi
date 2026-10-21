@@ -1,13 +1,13 @@
 {
   "schema": "bindi.policy.v1",
-  "query": "Miniprotein binders against a synthetic patient's mutant peptide-MHC complex, personalised from that patient's case record.",
-  "case": "fixtures/immunology_case_PLACEHOLDER.json",
-  "_swap": "To run the real case, point `case` at the Physician's signed synthetic immunology patient. That is the whole change: no code edit. The hold still refuses the design run until the human-reference gate passes and a wild-type margin is stated.",
+  "query": "Miniprotein binders against the campaign-one target NY-ESO-1 157-165 (SLLMWITQC) presented on HLA-A*02:01, from the campaign's own case record.",
+  "case": "fixtures/immunology_case_NYESO1_A0201.json",
+  "_swap": "The case record and the design spec now describe the same peptide (SLLMWITQC). The record is unsigned, so the design hold still refuses a real design run; signing it is clinical work, not a code edit. The hold also stays in force for the human-reference gate, the margin and the structural margin threshold, independently of the signature.",
   "boltz": {
     "modality": "binder",
-    "campaign_name": "SYNTH-IMM-001",
+    "campaign_name": "NYESO1-A0201",
     "number_of_final_designs": 3,
-    "project_folder": "results/SYNTH-IMM-001",
+    "project_folder": "results/NYESO1-A0201",
     "design_spec": "campaigns/nyeso1_a0201_pmhc.yaml",
     "design_spec_target_id": "NYESO1-A0201",
     "num_designs": 10
@@ -16,12 +16,16 @@
     "rank_on": [
       "i_pDAE"
     ],
-    "top_n": 3
+    "top_n": 3,
+    "_ipsae_veto_floor": "UNSET, deliberately. bindi.ipsae_veto reads policy.curation.ipsae_veto_floor as the floor below which the ipSAE VETO-ONLY filter removes a design. With no floor the filter is inert: it removes nothing and asserts nothing. No default exists in code, because a number there would be a threshold in all but name. A floor is a campaign decision; even once set, the filter may only refuse a design and can never pass, rank, promote or certify one, and it never clears the margin stage."
   },
-  "gallery": "gallery/SYNTH-IMM-001",
+  "gallery": "gallery/NYESO1-A0201",
   "_needs_mathew": [
-    "Case/peptide mismatch: design_spec campaigns/nyeso1_a0201_pmhc.yaml designs against NY-ESO-1 157-165 SLLMWITQC (HLA-A*02:01), while `case` points at fixtures/immunology_case_PLACEHOLDER.json whose peptide is YLDPETGDW. A real run needs a signed case record for the peptide actually being designed against; this is not reconciled in code.",
+    "Case record fixtures/immunology_case_NYESO1_A0201.json is UNSIGNED: a clinical signature cannot be supplied by an agent. Its signature.placeholder_reason lists the five things signing it would attest to.",
+    "Consent fields on that record are false because there is no individual patient (campaign one targets a published shared antigen). Whether a demonstration campaign needs a consent record at all is a BIO Physician determination.",
+    "The ten decoy peptides of the specificity panel are described in CASE.md but not enumerated anywhere in this repository, and are not invented here.",
+    "Negative-design panel: the TARGETED panel is now wired in, but residue-level BIO Physician sign-off is still outstanding and the helix endpoints are the source document's judgement, not verified fact.",
     "num_designs is the API minimum (10), not a campaign size. 300 designs prices at $15.0000, the whole standing APPR cap.",
-    "No non_binding_residues panel is selected; see the NEEDS MATHEW notes in the design spec."
+    "Whether to crop the target construct to get under the 512-residue pricing tier is NOT an engineering decision and has not been made: see the open question in docs/PROPOSAL-ipsae-structural-margin.md."
   ]
 }

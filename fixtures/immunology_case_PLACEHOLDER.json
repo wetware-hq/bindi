@@ -1,17 +1,26 @@
 {
   "schema": "bindi.immunology_case.v1",
   "case_id": "SYNTH-IMM-001",
+  "_RETIRED": "RETIRED 2026-10-21 as a campaign case record. It was never a signed patient and is no longer any campaign's case: campaigns/neoantigen_placeholder.json now points at fixtures/immunology_case_NYESO1_A0201.json, whose peptide (SLLMWITQC) is the peptide the campaign actually designs against. This file is kept ONLY as a test fixture exercising the unsigned-record path of the design hold, and its invented peptide YLDPETGDW must not be used as a design target.",
   "_PLACEHOLDER": "PLACEHOLDER. Invented patient written by the engineering half to exercise the seam. This is NOT the Physician's signed synthetic immunology patient; signature.signed is false, so the design hold stays in force and no real Boltz design run can start from this record.",
   "presentation": {
     "summary": "Invented 58-year-old with a lung adenocarcinoma stand-in, progressing after first-line therapy. Every field on this record is made up for testing.",
     "diagnosis": "Lung adenocarcinoma (synthetic stand-in)",
     "stage": "IV",
-    "prior_therapy": ["platinum doublet (synthetic)"],
+    "prior_therapy": [
+      "platinum doublet (synthetic)"
+    ],
     "ecog": 1
   },
   "hla": {
-    "class_i": ["HLA-A*02:01", "HLA-B*07:02", "HLA-C*07:02"],
-    "class_ii": ["HLA-DRB1*15:01"],
+    "class_i": [
+      "HLA-A*02:01",
+      "HLA-B*07:02",
+      "HLA-C*07:02"
+    ],
+    "class_ii": [
+      "HLA-DRB1*15:01"
+    ],
     "typing_method": "invented for testing",
     "restriction_allele": "HLA-A*02:01"
   },
@@ -20,11 +29,17 @@
     "variant": "p.G12D",
     "mutant_peptide": {
       "sequence": "YLDPETGDW",
-      "provenance": {"kind": "reference", "source": "invented neoantigen (synthetic case fixture)"}
+      "provenance": {
+        "kind": "reference",
+        "source": "invented neoantigen (synthetic case fixture)"
+      }
     },
     "wild_type_peptide": {
       "sequence": "YLGPETGDW",
-      "provenance": {"kind": "reference", "source": "invented wild-type counterpart (synthetic case fixture)"}
+      "provenance": {
+        "kind": "reference",
+        "source": "invented wild-type counterpart (synthetic case fixture)"
+      }
     },
     "mutated_position": 3,
     "source": "invented"

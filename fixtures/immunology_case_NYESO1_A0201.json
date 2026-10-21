@@ -1,0 +1,82 @@
+{
+  "schema": "bindi.immunology_case.v1",
+  "case_id": "SYNTH-NYESO1-A0201",
+  "target_id": "NYESO1-A0201",
+  "_what_this_is": "The case record for campaign one, written so that the record and the campaign are about the SAME peptide. Every clinical statement below is derived from the authoritative source fleets/NYESO1-A0201/CASE.md in wetware-hq/wing (case version 1.0, 2026-10-20; local copy read at /workspace/wing-push/fleets/NYESO1-A0201/CASE.md). Nothing clinical is invented here: where CASE.md does not state something, this record says so instead of filling it in. It replaces fixtures/immunology_case_PLACEHOLDER.json as the campaign's case record; that file is retired to a test fixture.",
+  "_source": {
+    "repository": "wetware-hq/wing",
+    "path": "fleets/NYESO1-A0201/CASE.md",
+    "case_version": "1.0",
+    "case_date": "2026-10-20",
+    "local_copy_read": "/workspace/wing-push/fleets/NYESO1-A0201/CASE.md"
+  },
+  "presentation": {
+    "summary": "Demonstration indication for campaign one, decided with BIO Physician and quoted from CASE.md: resected high-tumour-mutational-burden cutaneous melanoma treated in the minimal-residual-disease / adjuvant window. The product class is TCR-mimic antibodies and de novo minibinders, agents that recognise a tumour antigen in the context of HLA rather than a surface protein. There is no individual patient behind this record: campaign one targets a published shared cancer-testis antigen, and private neoantigens are explicitly deferred to later campaigns.",
+    "diagnosis": "Resected high-tumour-mutational-burden cutaneous melanoma (CASE.md, demonstration indication)",
+    "stage": "Resected, minimal-residual-disease / adjuvant window. CASE.md states the clinical window, not an AJCC stage; no stage is invented here.",
+    "_prior_therapy_note": "CASE.md does not specify prior therapy for a patient, because there is no patient. Field omitted rather than filled in.",
+    "_ecog_note": "Not stated in CASE.md. Omitted rather than invented."
+  },
+  "hla": {
+    "class_i": [
+      "HLA-A*02:01"
+    ],
+    "restriction_allele": "HLA-A*02:01",
+    "typing_method": "Not typed. CASE.md specifies only the restricting allele for the campaign target (HLA-A*02:01). The remaining class I alleles of any individual are unknown and are deliberately not invented.",
+    "_class_ii_note": "Not stated in CASE.md; omitted."
+  },
+  "neoantigen": {
+    "antigen_class": "shared_cancer_testis",
+    "gene": "NY-ESO-1",
+    "variant": "none (shared cancer-testis antigen; unmutated self sequence, no variant)",
+    "mutant_peptide": {
+      "sequence": "SLLMWITQC",
+      "provenance": {
+        "kind": "reference",
+        "source": "CASE.md (wetware-hq/wing, fleets/NYESO1-A0201/CASE.md, v1.0 2026-10-20): antigen NY-ESO-1, epitope residues 157-165, peptide SLLMWITQC, restricting allele HLA-A*02:01, 3-chain class I pMHC"
+      }
+    },
+    "wild_type_peptide": {
+      "absent": true,
+      "absent_reason": "There is no distinct wild-type counterpart. NY-ESO-1 157-165 is unmutated self sequence, so the peptide presented in healthy tissue (testis) is the identical sequence SLLMWITQC. A mutant-minus-wild-type margin is therefore not merely unavailable, it is not the right endpoint for this target: see specificity_panel below. No sequence is written here because any sequence would be invented."
+    },
+    "epitope_residues": "157-165 of NY-ESO-1 (CASE.md)",
+    "source": "published shared cancer-testis antigen (CASE.md)",
+    "_mutant_peptide_field_name_note": "The schema field is called mutant_peptide because bindi was written for private neoantigens. For this record it carries the ON-TARGET peptide, which is unmutated. The antigen_class field above is what distinguishes the two cases; nothing downstream may read this as a variant-derived peptide.",
+    "_variant_note": "None. NY-ESO-1 is a cancer-testis antigen, shared and not private: the epitope is unmutated self sequence whose tumour association comes from expression, not from a variant. CASE.md: 'a published, shared cancer-testis antigen, not a patient-specific private neoantigen'. No HGVS variant is invented here."
+  },
+  "specificity_panel": {
+    "endpoint": "on_target_minus_best_decoy",
+    "endpoint_rationale": "CASE.md: 'the primary endpoint of the computational campaign is the specificity margin, the on-target rank minus the best-decoy rank for a given design'. The clinical hazard is a binder that engages invariant HLA framework rather than the peptide: in natural TCR-pMHC class I interfaces the peptide contributes only about 12-49% of the buried surface, mean roughly 29%, and the rest is framework present on every nucleated cell. Such a binder would engage every HLA-A*02:01 patient regardless of their tumour, which makes this a population-level safety endpoint rather than a single-pair one. The reference failure is the MAGE-A3 affinity-enhanced TCR, which cross-reacted with titin and killed two patients by cardiogenic shock.",
+    "self_peptide_in_panel": true,
+    "self_peptide_note": "The wild-type / self peptide is a mandatory member of the panel. For this target it is the identical sequence SLLMWITQC, presented in healthy testis; a design is only of interest if it reads the peptide in a way that does not generalise to the framework that carries it.",
+    "panel_reference": "CASE.md: 'the decoy panel for the reproduction is ten peptide mutants of SLLMWITQC (nine single or double mutants and one quadruple mutant); a clinically motivated panel of proteome near-neighbours and self-peptides is a planned extension and is owned by BIO Physician'.",
+    "decoy_peptides": null,
+    "decoy_peptides_status": "NOT ENUMERATED HERE. CASE.md describes the panel (ten mutants of SLLMWITQC) but does not list the ten sequences, and they are not invented in this record. Supplying them is BIO Physician / BIO Scientist work.",
+    "negative_design_residue_panel": "targeted",
+    "negative_design_residue_panel_reference": "wetware-hq/wing fleets/nonbinding-panel-2026-10-20.md (local copy /workspace/wing-push/fleets/nonbinding-panel-2026-10-20.md); wired into campaigns/nyeso1_a0201_pmhc.yaml as target non_binding_residues. Distinct from the decoy PEPTIDE panel above: one steers the design away from conserved HLA surface, the other measures specificity after the fact."
+  },
+  "consent": {
+    "obtained": false,
+    "design_use": false,
+    "scope": "none",
+    "_note": "There is no individual patient and therefore no consent to record. Campaign one targets a published shared cancer-testis antigen (CASE.md); patient-specific private neoantigens are explicitly deferred. These fields are false rather than true because no consent exists to assert, which keeps the design hold in force. Whether a demonstration campaign against a published antigen needs a consent record at all, and in what form, is a determination for BIO Physician."
+  },
+  "data_class": {
+    "synthetic": true,
+    "sensitivity": "internal",
+    "release": "not_a_release",
+    "retention": "Campaign-one case record. No patient data of any kind: the antigen, epitope, peptide and restricting allele are published facts, and the clinical framing is the demonstration indication described in CASE.md. There is no individual behind it.",
+    "_synthetic_note": "Marked synthetic because no real patient record exists. The target itself is real and published; the 'case' is a demonstration cohort description."
+  },
+  "scope": "In vitro only. No in vivo work is planned or implied (CASE.md). Nothing submitted, nothing spent.",
+  "signature": {
+    "signed": false,
+    "placeholder_reason": "UNSIGNED, deliberately and necessarily. This record was constructed by the engineering half from CASE.md; the signature it needs is a clinical one and cannot be supplied by an agent. Signing it would attest to: (1) that SLLMWITQC / HLA-A*02:01 as written here is the campaign-one target; (2) that the demonstration indication and its MRD framing are as stated; (3) that the absence of a wild-type counterpart, and the replacement of the mutant-minus-wild-type endpoint with on-target-minus-best-decoy across the panel, is clinically correct for a shared cancer-testis antigen; (4) that the consent position above (no patient, therefore no consent) is the right one for this campaign; and (5) that the ten decoy peptides, still unenumerated, will be supplied before any specificity claim is made. Until it is signed the design hold stays in force and no real design run can start from this record.",
+    "awaiting": [
+      "BIO Physician (clinical sign-off)",
+      "Mathew (campaign owner)"
+    ],
+    "_hold_note": "Even if signed, this record cannot release the design hold on its own: with no wild-type counterpart no wild-type margin can be stated, and no structural margin threshold has been signed off for the Boltz-based pipeline. bindi.case.design_hold_reasons lists every outstanding condition."
+  }
+}

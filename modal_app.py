@@ -1,8 +1,8 @@
-"""bindi's Modal app: compute configuration as code, read from `infra.json` at import time.
+"""bindi's Modal app: compute configuration as code, read from `modal_infra.json` at import time.
 
 Modal fixes a function's resources when the app module is imported and deployed, not when
 the function is called: `cpu`, `memory`, `gpu` and `timeout` are arguments to the
-`@app.function(...)` decorator. So `infra.json` is not cloud state to mutate — it is read
+`@app.function(...)` decorator. So `modal_infra.json` is not cloud state to mutate — it is read
 here, at definition time, and a config change takes effect by redeploying a commit. Every
 machine spec is therefore traceable to a SHA rather than to a dashboard.
 
@@ -27,7 +27,7 @@ import pathlib
 import modal
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent
-INFRA_PATH = REPO_ROOT / "infra.json"
+INFRA_PATH = REPO_ROOT / "modal_infra.json"
 
 #: Read at import time. The decorators below are parameterised from this document.
 INFRA: dict = json.loads(INFRA_PATH.read_text(encoding="utf-8"))
@@ -35,7 +35,7 @@ INFRA: dict = json.loads(INFRA_PATH.read_text(encoding="utf-8"))
 #: Recorded in every function's output so a result names the config it ran under.
 INFRA_SHA256: str = hashlib.sha256(INFRA_PATH.read_bytes()).hexdigest()
 
-REMOTE_INFRA_PATH = INFRA["image"]["local_files"]["infra.json"]
+REMOTE_INFRA_PATH = INFRA["image"]["local_files"]["modal_infra.json"]
 REMOTE_SRC = INFRA["image"]["local_dirs"]["src"]
 
 #: Keys of a function spec that Modal accepts as decorator arguments.
@@ -62,7 +62,7 @@ app = modal.App(INFRA["app_name"], image=image)
 
 
 def resources(name: str) -> dict:
-    """Decorator kwargs for one fleet function, straight from `infra.json`."""
+    """Decorator kwargs for one fleet function, straight from `modal_infra.json`."""
     spec = INFRA["functions"][name]
     return {key: spec[key] for key in RESOURCE_KEYS if key in spec}
 
@@ -195,7 +195,7 @@ def sequence_design_repeat_noise(
 def main() -> None:
     """Print the configuration this app would deploy. Runs nothing remotely."""
     print(f"app: {INFRA['app_name']}")
-    print(f"infra.json sha256: {INFRA_SHA256}")
+    print(f"modal_infra.json sha256: {INFRA_SHA256}")
     print(f"generator: {INFRA.get('generator')}")
     for name in sorted(INFRA["functions"]):
         print(f"  {name}: {resources(name)}")

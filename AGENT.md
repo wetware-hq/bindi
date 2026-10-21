@@ -66,6 +66,7 @@ Do not recruit bindi for targets or modalities outside BoltzGen’s protocols wi
 Translate the user query into a **`bindi.policy.v1`** document:
 
 - **`query`** — one-sentence design intent (audit trail for humans).
+- **ipSAE is veto-only outside the margin stage.** `bindi.ipsae_veto` may remove a design; it may never pass, rank-promote or certify one, and no ipSAE number is recorded for a surviving design. Never report a survivor as validated, and never quote an ipSAE value without the caveat that travels with it.
 - **Margin scorers** — `ipsae_boltz_cpu_v1` (ipSAE from a Boltz run's own `pae.npz` and predicted CIF) is a **candidate** structural scorer: selectable, structure-derived, CPU-only, and with no signed threshold, so it cannot clear the margin stage. Do not present a margin computed from it as evidence of binding.
 - **`generator`** — always `boltzgen`. Boltz is the generator; `normalize_policy` writes this key so no policy leaves the generator implicit.
 - **`boltz`** — BoltzGen fields: `design_spec` (YAML path), `protocol`, `num_designs`, `budget` / `number_of_final_designs`, `project_folder`, plus optional `alpha`, `devices`, `seed`. A legacy `bindcraft` block on an existing policy file is still read and migrated onto `boltz` (with a `DeprecationWarning`), for backwards compatibility only; never write that key.

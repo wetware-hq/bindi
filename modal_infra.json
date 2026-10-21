@@ -1,14 +1,21 @@
 {
   "schema": "bindi.infra.v1",
-  "description": "Compute configuration for bindi's fleet functions on Modal. This file is the single source of truth for every machine spec: modal_app.py reads it at import time and uses it to parameterise each @app.function(...) decorator, because Modal fixes cpu/memory/gpu/timeout at deploy time, not at run time. A spec change therefore takes effect by redeploying a commit, never by editing invisible cloud state.",
+  "description": "Compute configuration for bindi's fleet functions on Modal. This file is the single source of truth for every machine spec: modal_app.py reads it at import time and uses it to parameterise each @app.function(...) decorator, because Modal fixes cpu/memory/gpu/timeout at deploy time, not at run time. A spec change therefore takes effect by redeploying a commit, never by editing invisible cloud state. Named modal_infra.json, not infra.json: wetware-hq/wing keeps a different infra.json at fleets/NYESO1-A0201/infra.json which is the CAMPAIGN infrastructure record. Same filename, different job; the name here is explicit about which one it is.",
   "generator": "boltzgen",
   "gpu_statement": "No function here declares a GPU. Boltz is the generator and stays on the hosted design API behind the human spend gate; self-hosting Boltz is out of scope by standing instruction, so no GPU container is declared for generation. BindCraft-on-Modal, which did require a GPU, has been removed from the design path. A GPU key is added here only when a specific function genuinely needs one and that need has been approved.",
   "image": {
     "python_version": "3.13",
-    "apt_install": ["mmseqs2", "ncbi-blast+"],
-    "pip_install": ["biopython>=1.83", "gemmi>=0.6.5", "numpy>=1.26"],
+    "apt_install": [
+      "mmseqs2",
+      "ncbi-blast+"
+    ],
+    "pip_install": [
+      "biopython>=1.83",
+      "gemmi>=0.6.5",
+      "numpy>=1.26"
+    ],
     "local_files": {
-      "infra.json": "/bindi/infra.json"
+      "modal_infra.json": "/bindi/modal_infra.json"
     },
     "local_dirs": {
       "src": "/bindi/src",

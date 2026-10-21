@@ -30,19 +30,19 @@
 #   can emit either (boltz_hosted.REQUEST_SHAPES).
 #
 # ---- NEEDS MATHEW'S JUDGEMENT (not invented here) -------------------------------------
-# 1. CASE RECORD MISMATCH. This spec's chain C is SLLMWITQC (NY-ESO-1, a shared
-#    cancer-testis antigen). No signed case record for it exists in this repository: the
-#    campaign policy campaigns/neoantigen_placeholder.json points at
-#    fixtures/immunology_case_PLACEHOLDER.json, whose peptide is YLDPETGDW, and
-#    evidence/immunology_case_WET_IMM_001.v1.json carries YLMSYNGVV. A real run needs a
-#    case record whose peptide IS the peptide designed against. Not reconciled here.
-# 2. NEGATIVE DESIGN (non_binding_residues) IS ABSENT, deliberately. Three candidate panels
-#    exist (conservative / targeted / aggressive) in
-#    /workspace/wetware/binder-design/v3/nonbinding-panel-2026-10-20.md, "pending BIO
-#    Physician residue-level sign-off", with the targeted panel recommended by BIO
-#    Scientist. Choosing one is a scientific decision with a safety argument attached
-#    (CASE.md: a framework-directed binder is unsafe, not merely weak), so no panel is
-#    written in. Nothing here steers designs away from invariant HLA framework.
+# 1. CASE RECORD: RESOLVED 2026-10-21, still unsigned. Mathew's decision was to make the
+#    case record match the campaign rather than bend the campaign to the fixture, so
+#    fixtures/immunology_case_NYESO1_A0201.json now carries SLLMWITQC, derived from
+#    wetware-hq/wing fleets/NYESO1-A0201/CASE.md, and the campaign policy points at it.
+#    fixtures/immunology_case_PLACEHOLDER.json (YLDPETGDW) is retired to a test fixture.
+#    The new record is UNSIGNED: an agent cannot supply a clinical signature. It also
+#    declares antigen_class shared_cancer_testis, which means there is no wild-type
+#    counterpart peptide and the endpoint is on-target minus best decoy across the panel.
+# 2. NEGATIVE DESIGN: SELECTED 2026-10-21. Mathew accepted OD-2's recommendation of the
+#    TARGETED panel from wetware-hq/wing fleets/nonbinding-panel-2026-10-20.md, and it is
+#    written into the target entities below. Residue-level BIO Physician sign-off is still
+#    outstanding, and the helix endpoints are flagged in the source as judgement rather
+#    than verified fact; both caveats are repeated at the panel itself.
 # 3. CAMPAIGN SIZE AND SPEND. Priced live (read-only) on 2026-10-20: 300 designs at this
 #    complex size = $15.0000 (300 units @ $0.0500), which is the entire standing APPR cap.
 #    num_proteins is therefore NOT set in this file; the campaign policy supplies it and
@@ -67,10 +67,44 @@ target:
     - type: protein
       chain_ids: ["A"]
       value: GSHSMRYFFTSVSRPGRGEPRFIAVGYVDDTQFVRFDSDAASQRMEPRAPWIEQEGPEYWDQETRNVKAQSQTDRVDLGTLRGYYNQSEAGSHTIQIMYGCDVGSDGRFLRGYRQDAYDGKDYIALNEDLRSWTAADMAAQITKRKWEAAHEAEQLRAYLDGTCVEWLRRYLENGKETLQRTDPPKTHMTHHPISDHEATLRCWALGFYPAEITLTWQRDGEDQTQDTELVETRPAGDGTFQKWAAVVVPSGEEQRYTCHVQHEGLPKPLTLRWE
+      # TARGETED negative-design panel (Mathew, 2026-10-21, accepting OD-2's recommendation).
+      # 0-based, per chain. Source: wetware-hq/wing fleets/nonbinding-panel-2026-10-20.md.
+      #   180-274  alpha3 (+3 residues of the alpha2/alpha3 junction, over-marked in the
+      #            safe direction, retained for continuity with the earlier probe file)
+      #   56-61, 76-83, 137-148, 166-179  the alpha1/alpha2 helix segments DISTAL to the
+      #            peptide centre, leaving the central restriction-triad region (R65, A69,
+      #            Q155) contactable so the published de novo binding mode stays reachable.
+      # 135 of chain A's 275 residues marked; 140 left free.
+      # CAVEAT, carried from the source document verbatim in substance: the helix spans
+      # alpha1 57-84 and alpha2 138-180 (author numbering) are JUDGEMENT, not verified
+      # fact. They bracket every contact residue listed in the source but were not checked
+      # residue by residue against a crystal structure; treat the exact endpoints as
+      # approximate. Residue-level BIO Physician sign-off is STILL OUTSTANDING: the source
+      # is marked "pending BIO Physician residue-level sign-off" and nothing here changes
+      # that. It is also not verified that the hosted BoltzGen honours non_binding_residues
+      # at all (support question sent 2026-10-20), nor whether the panel changes cost.
+      non_binding_residues: [
+        56, 57, 58, 59, 60, 61, 76, 77, 78, 79, 80, 81, 82, 83, 137, 138, 139, 140, 141, 142,
+        143, 144, 145, 146, 147, 148, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179,
+        180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199,
+        200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219,
+        220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239,
+        240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259,
+        260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274
+      ]
     # Chain B: beta-2-microglobulin, UniProt P61769 residues 21-119 (99 aa).
     - type: protein
       chain_ids: ["B"]
       value: IQRTPKIQVYSRHPAENGKSNFLNCYVSGFHPSDIEVDLLKNGERIEKVEHSDLSFSKDWSFYLLYYTEFTPTEKDEYACRVNHVTLSQPKIVKWDRDM
+      # Chain B is marked in full in every panel in the source document: beta-2-microglobulin
+      # is membrane-proximal and is not part of a TCR or TCR-mimic footprint.
+      non_binding_residues: [
+        0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+        20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39,
+        40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59,
+        60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+        80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98
+      ]
     # Chain C: the epitope itself, NY-ESO-1 157-165. Every residue is epitope: the whole
     # point of the campaign is a binder that reads the peptide, not the HLA framework.
     # Indices are 0-based per chain and 0-8 is the full valid range for this 9-mer.
@@ -78,7 +112,7 @@ target:
       chain_ids: ["C"]
       value: SLLMWITQC
       epitope_residues: [0, 1, 2, 3, 4, 5, 6, 7, 8]
-    # non_binding_residues: deliberately absent. See NEEDS MATHEW item 2.
+    # Chain C carries no non_binding_residues: the peptide is what the binder should read.
 
 binder_specification:
   modality: custom_protein

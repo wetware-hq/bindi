@@ -36,6 +36,28 @@ AA_RE = re.compile(r"^[ACDEFGHIKLMNPQRSTVWY]{8,15}$")
 HLA_I_RE = re.compile(r"^HLA-[ABC]\*[0-9]{2}:[0-9]{2}$")
 CASE_ID_RE = re.compile(r"^SYNTH-[A-Za-z0-9._-]+$")
 
+#: What kind of antigen the record is about. Absent means `private_neoantigen`, so every
+#: record written before this field existed validates exactly as it did before.
+#:
+#: `shared_cancer_testis` (Mathew, 2026-10-21) covers a published shared antigen such as
+#: NY-ESO-1: there is no variant and therefore no distinct wild-type counterpart — the self
+#: peptide presented in healthy tissue IS the same sequence. Such a record may not carry a
+#: wild-type peptide sequence (inventing one would fabricate clinical content), and in
+#: exchange it must declare MORE than a private-neoantigen record does: the specificity
+#: endpoint it is judged on and the negative-design panel it is judged against. This is a
+#: tightening for that class, not a relaxation: a record with no wild-type sequence can
+#: never produce a stated wild-type margin, so `design_hold_reasons` keeps the hold in
+#: force for it in every case.
+ANTIGEN_CLASSES = {"private_neoantigen", "shared_cancer_testis"}
+DEFAULT_ANTIGEN_CLASS = "private_neoantigen"
+
+#: The only endpoint a shared-antigen record may declare. The clinical hazard for a
+#: neoantigen binder is a binder that engages invariant HLA framework and therefore binds
+#: in every patient carrying the restricting allele regardless of their tumour, so the
+#: endpoint is on-target minus best decoy across the panel, with the wild-type/self peptide
+#: a mandatory panel member.
+PANEL_ENDPOINT = "on_target_minus_best_decoy"
+
 CONSENT_SCOPES = {"research_only", "clinical_care", "none"}
 SENSITIVITIES = {"public", "internal", "sensitive"}
 RELEASES = {"not_a_release", "released"}
@@ -111,6 +133,15 @@ def validate_case(case: Any) -> list[str]:
         for field in ("gene", "variant"):
             if not str(neo.get(field) or "").strip():
                 problems.append(f"neoantigen.{field} is required")
+        antigen_class = neo.get("antigen_class", DEFAULT_ANTIGEN_CLASS)
+        if antigen_class not in ANTIGEN_CLASSES:
+            problems.append(
+                f"neoantigen.antigen_class must be one of {sorted(ANTIGEN_CLASSES)}, found "
+                f"{antigen_class!r}"
+            )
+        if antigen_class == "shared_cancer_testis":
+            problems.extend(_shared_antigen_problems(case, neo))
+            return problems + _tail_problems(case)
         mutant = neo.get("mutant_peptide")
         wild = neo.get("wild_type_peptide")
         mutant_seq = None
@@ -142,6 +173,13 @@ def validate_case(case: Any) -> list[str]:
                     "wild-type counterpart must be the same peptide without the variant"
                 )
 
+    problems.extend(_tail_problems(case))
+    return problems
+
+
+def _tail_problems(case: dict[str, Any]) -> list[str]:
+    """Consent, data class and signature checks, shared by every antigen class."""
+    problems: list[str] = []
     consent = case.get("consent")
     if not isinstance(consent, dict):
         problems.append("consent is required and must be an object")
@@ -169,6 +207,84 @@ def validate_case(case: Any) -> list[str]:
     if not isinstance(signature, dict) or not isinstance(signature.get("signed"), bool):
         problems.append("signature.signed is required and must be true or false")
 
+    return problems
+
+
+def _shared_antigen_problems(case: dict[str, Any], neo: dict[str, Any]) -> list[str]:
+    """Checks for a shared cancer-testis antigen record. Stricter, never looser.
+
+    No variant exists, so no distinct wild-type counterpart exists either: the self peptide
+    presented in healthy tissue is the same sequence. A wild-type SEQUENCE is therefore
+    forbidden here rather than merely optional — the alternative would be an invented
+    peptide — and the record must instead say, explicitly, that it is absent and why, which
+    endpoint it is judged on, and which negative-design panel it is judged against.
+
+    A record in this class can never yield a stated wild-type margin, so the design hold
+    stays in force for it regardless of signature. Nothing here can release anything.
+    """
+    problems: list[str] = []
+    if not str(neo.get("gene") or "").strip():
+        problems.append("neoantigen.gene is required")
+    if not str(neo.get("variant") or "").strip():
+        problems.append(
+            "neoantigen.variant is required; for a shared antigen say so in words rather "
+            "than inventing an HGVS variant"
+        )
+
+    target_peptide = neo.get("mutant_peptide")
+    problems.extend(
+        validate_sequence_field(target_peptide, path="neoantigen.mutant_peptide")
+        if target_peptide is not None
+        else ["neoantigen.mutant_peptide is required (the on-target peptide)"]
+    )
+    seq = sequence_text(target_peptide)
+    if seq and not AA_RE.match(seq):
+        problems.append(
+            "neoantigen.mutant_peptide.sequence must be 8-15 one-letter residues, found "
+            f"{seq!r}"
+        )
+
+    wild = neo.get("wild_type_peptide")
+    if not isinstance(wild, dict):
+        problems.append(
+            "neoantigen.wild_type_peptide is required and, for a shared cancer-testis "
+            "antigen, must be an explicit absence object {absent: true, absent_reason: ...}"
+        )
+    else:
+        if wild.get("absent") is not True:
+            problems.append(
+                "neoantigen.wild_type_peptide.absent must be true for a shared "
+                "cancer-testis antigen: there is no variant, so no distinct wild-type "
+                "counterpart exists"
+            )
+        if wild.get("sequence") is not None:
+            problems.append(
+                "neoantigen.wild_type_peptide.sequence must NOT be set for a shared "
+                "cancer-testis antigen: any sequence here would be an invented peptide"
+            )
+        if not str(wild.get("absent_reason") or "").strip():
+            problems.append("neoantigen.wild_type_peptide.absent_reason is required")
+
+    panel = case.get("specificity_panel")
+    if not isinstance(panel, dict):
+        problems.append(
+            "specificity_panel is required for a shared cancer-testis antigen: with no "
+            "wild-type counterpart, specificity is judged against the negative-design panel"
+        )
+    else:
+        if panel.get("endpoint") != PANEL_ENDPOINT:
+            problems.append(
+                f"specificity_panel.endpoint must be {PANEL_ENDPOINT!r}"
+            )
+        if panel.get("self_peptide_in_panel") is not True:
+            problems.append(
+                "specificity_panel.self_peptide_in_panel must be true: the wild-type/self "
+                "peptide is a mandatory member of the panel"
+            )
+        if not str(panel.get("panel_reference") or "").strip():
+            problems.append(
+                "specificity_panel.panel_reference is required (where the panel is defined)"
+            )
     return problems
 
 
@@ -238,6 +354,24 @@ def resolve_target(
     hla = case.get("hla") or {}
     neo = case.get("neoantigen") or {}
     restriction = hla.get("restriction_allele") or (hla.get("class_i") or [None])[0]
+    antigen_class = neo.get("antigen_class", DEFAULT_ANTIGEN_CLASS)
+    wild_type = neo.get("wild_type_peptide")
+    wild_absent_reason = None
+    if isinstance(wild_type, dict) and wild_type.get("absent"):
+        # An explicit absence is passed on as an absence, never as a truthy object: the
+        # margin stage must see "there is no wild-type complex", not a dict it could
+        # stringify into a peptide.
+        wild_absent_reason = wild_type.get("absent_reason")
+        wild_type = None
+    panel = case.get("specificity_panel") or {}
+    extra: dict[str, Any] = {}
+    if antigen_class != DEFAULT_ANTIGEN_CLASS:
+        extra["antigen_class"] = antigen_class
+    if wild_absent_reason:
+        extra["wild_type_peptide_absent_reason"] = wild_absent_reason
+    if panel:
+        extra["margin_endpoint"] = panel.get("endpoint")
+        extra["specificity_panel"] = panel
     return {
         "source": "case_record",
         "target_id": f"{case['case_id']}:{neo.get('gene')}:{neo.get('variant')}",
@@ -245,7 +379,7 @@ def resolve_target(
         "signed": is_signed(case),
         "restriction_allele": restriction,
         "mutant_peptide": neo.get("mutant_peptide"),
-        "wild_type_peptide": neo.get("wild_type_peptide"),
+        "wild_type_peptide": wild_type,
         "gene": neo.get("gene"),
         "variant": neo.get("variant"),
         "consent_design_use": bool((case.get("consent") or {}).get("design_use")),
@@ -253,6 +387,7 @@ def resolve_target(
             "Target taken from the patient case record. Unsigned records are PLACEHOLDERs: "
             "fixture-backed runs only."
         ),
+        **extra,
     }
 
 

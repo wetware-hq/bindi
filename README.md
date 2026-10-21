@@ -76,19 +76,19 @@ One command, one JSONL trace, one case: `case record -> target extraction -> bin
 
 | Stage | Status today | Why |
 |---|---|---|
-| `design` | `fixture_backed` | No BindCraft, no Modal, no GPU. The ranked table is `fixtures/sample_ranked.csv`; the sequences are invented and unrelated to the case peptide. |
-| `margin_wild_type` | `not_computed` | Sequence-level scorers (`--sequence-design`, `class_bucket_v1`, `blosum_position_v2`) may state a margin for testing but **do not establish** the immunology threshold. Structural evaluation uses **BindCraft on Modal** (`bindi structural-margin-repeat-noise`, scorer `bindcraft_modal_v1`, `MODAL_TOKEN` required for live GPU). |
+| `design` | `fixture_backed` | No design model ran on our own compute. The ranked table is `fixtures/sample_ranked.csv`; the sequences are invented and unrelated to the case peptide. |
+| `margin_wild_type` | `not_computed` | Sequence-level scorers (`--sequence-design`, `class_bucket_v1`, `blosum_position_v2`) may state a margin for testing but **do not establish** the immunology threshold. **No structural scorer is wired in this repo**: the self-hosted BindCraft-on-Modal path was removed on 2026-10-21, so the threshold stays `not_established` and the design hold stays in force. |
 | `human_reference_gate` | `unbuilt` | bindi ships no human reference proteome. Supplied one (`--human-reference-fasta`), it runs an **exact k-mer containment screen** — not an alignment, not a validated homology search. It never returns `pass` without looking. |
 | `ward_handoff` | `not_invoked` | The hand-off record is written to `ward_handoff.json`, but ward runs fifteen fixed scenarios and exposes no entry point for an arbitrary case, so **the ward gates and the letter did not run**. |
 | `letter` | `not_produced` | Letters come from ward's letters endware, which this run does not reach. |
 
-**The design hold is enforced in code.** A real design run needs a signed case record, a `pass` from the human-reference gate, a stated wild-type margin, and an **established structural margin threshold** (PAIR-EASY positive control on `bindcraft_modal_v1`). `case.design_hold_reasons` names each missing condition. `bindi case-run --design` on an unsigned record refuses and exits `2` without calling BindCraft; `generate(..., dry_run=False)` on a policy naming a case record raises `DesignHold`. `fixtures/immunology_case_PLACEHOLDER.json` is an engineering placeholder written to exercise the seam — it is **not** a signed patient, and a test fails if any case fixture in this repo claims to be signed.
+**The design hold is enforced in code.** A real design run needs a signed case record, a `pass` from the human-reference gate, a stated wild-type margin, and an **established structural margin threshold** (PAIR-EASY positive control on a structural scorer; no such scorer is wired in this repo today, so this condition cannot currently be met). `case.design_hold_reasons` names each missing condition. `bindi case-run --design` on an unsigned record refuses and exits `2` without calling any design backend; `generate(..., dry_run=False)` on a policy naming a case record raises `DesignHold`. `fixtures/immunology_case_PLACEHOLDER.json` is an engineering placeholder written to exercise the seam — it is **not** a signed patient, and a test fails if any case fixture in this repo claims to be signed.
 
 Exit codes: `0` fixture-backed run completed, `1` case record invalid, `2` design refused by the hold, `3` a gate returned `fail`.
 
 ## Bar
 
-`pip install -e .` then `pytest` (101 passed; 11 skipped without `mmseqs2` on PATH) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
+`pip install -e .` then `pytest` (109 passed; 11 skipped without `mmseqs2` on PATH) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
 
 ## Deployment
 

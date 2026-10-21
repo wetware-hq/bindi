@@ -21,6 +21,7 @@ from bindi.provenance import sequence_text
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA = ROOT / "schemas" / "immunology_case.v1.schema.json"
 PLACEHOLDER = ROOT / "fixtures" / "immunology_case_PLACEHOLDER.json"
+WET_IMM = ROOT / "evidence" / "immunology_case_WET_IMM_001.v1.json"
 def _configure_gates(monkeypatch, tmp_path):
     human = tmp_path / "clean_human.fasta"
     human.write_text(">unrelated\nACDEFGHIKLMNPQRSTVWYACDEFGHIK\n", encoding="utf-8")
@@ -190,6 +191,22 @@ def test_hold_blocks_a_real_generate_before_bindcraft_is_called(tmp_path, monkey
         generate(policy, workdir=tmp_path, dry_run=False)
 
 
+def test_design_hold_requires_established_structural_threshold():
+    # Migrated from tests/test_structural_margin.py: the threshold condition is a property of
+    # the hold, not of any particular scorer, and survives removal of the self-hosted scorer.
+    target = {
+        "source": "case_record",
+        "signed": True,
+        "consent_design_use": True,
+    }
+    reasons = case_mod.design_hold_reasons(
+        target,
+        human_reference={"status": "pass"},
+        margin={"status": "stated", "threshold_status": "not_established"},
+    )
+    assert any("structural margin threshold" in r for r in reasons)
+
+
 def test_unsigned_consent_refusal():
     case = _case()
     case["signature"] = {"signed": True, "signed_by": "test"}
@@ -219,6 +236,27 @@ def test_margin_is_stated_when_a_scorer_is_injected():
     record = margin.score_wild_type_margin(target, designs, scorer=scorer)
     assert record["status"] == "stated"
     assert record["per_design"][0]["margin"] == "0.750000"
+
+
+def test_sequence_margin_does_not_clear_threshold():
+    # Migrated from tests/test_structural_margin.py.
+    record = margin.score_wild_type_margin(
+        {"mutant_peptide": "AAA", "wild_type_peptide": "AAB"},
+        [{"design": "d1", "sequence": "ACDEFG"}],
+        scorer=lambda pep, bind: 1.0,
+        scorer_id="blosum_position_v2",
+        evidence_level="sequence_level_not_structure_validated",
+    )
+    assert record["status"] == "stated"
+    assert record["threshold_status"] == "not_established"
+    assert record["clears_margin_threshold"] is False
+
+
+def test_wet_imm_case_validates():
+    # Migrated from tests/test_structural_margin.py.
+    case = case_mod.load_case(WET_IMM)
+    assert case_mod.validate_case(case) == []
+    assert case["neoantigen"]["mutant_peptide"]["sequence"] == "YLMSYNGVV"
 
 
 def test_margin_not_applicable_for_a_fixture_target(monkeypatch):

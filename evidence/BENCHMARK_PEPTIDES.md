@@ -16,4 +16,4 @@ The signed immunology record **WET-IMM-001** (`evidence/immunology_case_WET_IMM_
 | `PAIR-EASY` (bench) | `YLGEFPGDW` / `YLGKFPGDW` | Positive control for threshold establishment |
 | `PAIR-HARD` (bench) | `YLGVFPGDW` / `YLGMFPGDW` | Hard bench; spread only |
 
-Structural margin repeat-noise (`bindi structural-margin-repeat-noise`) records `pair_role` and `wet_record_id` on every run. Sequence scorers (`class_bucket_v1`, `blosum_position_v2`) remain selectable for reproduction but **do not** establish the margin threshold.
+Structural margin repeat-noise has no runner in this repo: the self-hosted BindCraft-on-Modal scorer and its `bindi structural-margin-repeat-noise` command were removed on 2026-10-21, so no structural margin evidence can be generated here. Sequence scorers (`class_bucket_v1`, `blosum_position_v2`) remain selectable for reproduction but **do not** establish the margin threshold.

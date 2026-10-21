@@ -253,7 +253,7 @@ def case_run(
             requested="real_design_run",
             hold_reasons=hold_reasons,
             note=(
-                "A real BindCraft/Modal design run was requested. The hold is enforced here: "
+                "A real design run was requested. The hold is enforced here: "
                 "nothing was submitted."
             ),
         )

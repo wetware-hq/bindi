@@ -36,12 +36,12 @@ NOT_COMPUTED_REASON = (
 )
 
 SEQUENCE_SCORER_IDS = frozenset({"class_bucket_v1", "blosum_position_v2"})
-STRUCTURAL_SCORER_ID = "bindcraft_modal_v1"
 
 THRESHOLD_NOT_ESTABLISHED_REASON = (
-    "Margin threshold is not established: only a structural scorer (bindcraft_modal_v1) that "
-    "clears PAIR-EASY at the signed 2×-spread threshold may establish the immunology margin "
-    "stage. Sequence-level scorers remain selectable for reproduction but do not clear the margin."
+    "Margin threshold is not established: no structural scorer is wired in this repo. Only a "
+    "structural scorer that clears PAIR-EASY at the signed 2×-spread threshold may establish "
+    "the immunology margin stage. Sequence-level scorers remain selectable for reproduction but "
+    "do not clear the margin."
 )
 
 
@@ -72,15 +72,6 @@ def _threshold_fields(
         return {
             "threshold_status": threshold_status,
             "clears_margin_threshold": threshold_status == "established",
-        }
-    if scorer_id == STRUCTURAL_SCORER_ID:
-        return {
-            "threshold_status": "not_established",
-            "clears_margin_threshold": False,
-            "threshold_reason": (
-                "Structural scorer invoked without a completed PAIR-EASY repeat-noise report; "
-                "threshold not established."
-            ),
         }
     return {
         "threshold_status": "not_established",

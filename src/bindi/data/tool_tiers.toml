@@ -13,11 +13,6 @@ tier = "deployable"
 licence = "MIT"
 citation = "https://github.com/HannesStark/boltzgen/blob/main/LICENSE"
 
-[tools."BindCraft-on-Modal"]
-tier = "evaluation_only"
-licence = "BindCraft / PyRosetta stack (licence-restricted; Modal GPU evaluation only)"
-citation = "https://www.pyrosetta.org/home/licensing-pyrosetta"
-
 [tools."FEP+"]
 tier = "evaluation_only"
 licence = "Schrodinger commercial (proprietary)"

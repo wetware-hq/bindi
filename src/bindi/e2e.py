@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from . import boltz as boltz_mod
 from . import case as case_mod
 from . import gates, margin
 from .curate import curate
@@ -253,7 +254,7 @@ def case_run(
             requested="real_design_run",
             hold_reasons=hold_reasons,
             note=(
-                "A real BindCraft/Modal design run was requested. The hold is enforced here: "
+                "A real Boltz design run was requested. The hold is enforced here: "
                 "nothing was submitted."
             ),
         )
@@ -306,12 +307,16 @@ def case_run(
             }
 
     run_policy = dict(policy or {})
-    bindcraft = dict(run_policy.get("bindcraft") or {})
-    bindcraft.setdefault("campaign_name", case["case_id"])
-    bindcraft.setdefault("project_folder", f"results/{case['case_id']}")
-    bindcraft.setdefault("number_of_final_designs", 3)
-    bindcraft["target"] = target["target_id"]
-    run_policy["bindcraft"] = bindcraft
+    # Boltz is the generator: the design block is `boltz`. A legacy `bindcraft` block on an
+    # existing policy file is read once here and folded in, never written back.
+    boltz_block = dict(run_policy.pop("bindcraft", None) or {})
+    boltz_block.update(dict(run_policy.get("boltz") or {}))
+    boltz_block.setdefault("campaign_name", case["case_id"])
+    boltz_block.setdefault("project_folder", f"results/{case['case_id']}")
+    boltz_block.setdefault("number_of_final_designs", 3)
+    boltz_block["target"] = target["target_id"]
+    run_policy["boltz"] = boltz_block
+    run_policy["generator"] = boltz_mod.GENERATOR_ID
     run_policy.setdefault("curation", {"top_n": 3})
     run_policy.setdefault("gallery", f"gallery/{case['case_id']}")
 
@@ -321,13 +326,13 @@ def case_run(
         scorer_id, score_fn, sequence_scorer_meta = design_engine.resolve_scorer(
             design_scorer_id
         )
-        bindcraft.setdefault("number_of_final_designs", 3)
-        project_folder = Path(bindcraft["project_folder"])
+        boltz_block.setdefault("number_of_final_designs", 3)
+        project_folder = Path(boltz_block["project_folder"])
         project_folder.mkdir(parents=True, exist_ok=True)
         sequence_design_rows = design_engine.run_mutational_search(
             mutant_peptide,
             seed=design_seed,
-            final_count=int(bindcraft.get("number_of_final_designs") or 3),
+            final_count=int(boltz_block.get("number_of_final_designs") or 3),
             scorer_id=scorer_id,
         )
         design_engine.attach_wild_type_margins(
@@ -372,6 +377,7 @@ def case_run(
             project_folder=generation["project_folder"],
             campaign_file=generation["campaign_file"],
             designs_are_real=False,
+            generator=boltz_mod.GENERATOR_ID,
             hold_reasons=hold_reasons,
             note=(
                 "No design was performed. The ranked table is bindi's fixture "

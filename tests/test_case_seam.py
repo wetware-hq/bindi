@@ -139,7 +139,7 @@ def test_target_comes_from_the_case_record():
 
 def test_fixture_fallback_is_intact_when_no_case_is_given(monkeypatch):
     monkeypatch.delenv(case_mod.CASE_ENV, raising=False)
-    target = case_mod.resolve_target({"bindcraft": {"target": "hPDL1"}})
+    target = case_mod.resolve_target({"boltz": {"target": "hPDL1"}})
     assert target["source"] == "fixture"
     assert target["target_id"] == "hPDL1"
     assert target["mutant_peptide"] is None
@@ -155,7 +155,14 @@ def test_case_path_precedence(tmp_path, monkeypatch):
 def test_no_case_and_no_target_is_an_error(monkeypatch):
     monkeypatch.delenv(case_mod.CASE_ENV, raising=False)
     with pytest.raises(case_mod.CaseError):
-        case_mod.resolve_target({"bindcraft": {}})
+        case_mod.resolve_target({"boltz": {}})
+
+
+def test_legacy_design_block_still_resolves_a_target(monkeypatch):
+    """Backwards compatibility only: an existing policy file keyed `bindcraft` still reads."""
+    monkeypatch.delenv(case_mod.CASE_ENV, raising=False)
+    target = case_mod.resolve_target({"bindcraft": {"target": "hPDL1"}})
+    assert target["target_id"] == "hPDL1"
 
 
 # ---- the hold -------------------------------------------------------------------
@@ -180,10 +187,10 @@ def test_hold_clears_only_when_signed_gated_and_margin_stated():
     ) == []
 
 
-def test_hold_blocks_a_real_generate_before_bindcraft_is_called(tmp_path, monkeypatch):
-    monkeypatch.setenv("BINDCRAFT_CMD", "/nonexistent/bindcraft-must-not-run")
+def test_hold_blocks_a_real_generate_before_the_generator_is_called(tmp_path, monkeypatch):
+    monkeypatch.setenv("BOLTZGEN_CMD", "/nonexistent/boltzgen-must-not-run")
     policy = {
-        "bindcraft": {"target": "hPDL1", "project_folder": str(tmp_path / "results")},
+        "boltz": {"target": "hPDL1", "project_folder": str(tmp_path / "results")},
         "case": str(PLACEHOLDER),
     }
     with pytest.raises(case_mod.DesignHold):
@@ -223,7 +230,7 @@ def test_margin_is_stated_when_a_scorer_is_injected():
 
 def test_margin_not_applicable_for_a_fixture_target(monkeypatch):
     monkeypatch.delenv(case_mod.CASE_ENV, raising=False)
-    target = case_mod.resolve_target({"bindcraft": {"target": "hPDL1"}})
+    target = case_mod.resolve_target({"boltz": {"target": "hPDL1"}})
     assert margin.score_wild_type_margin(target, []) ["status"] == "not_applicable"
 
 
@@ -339,7 +346,7 @@ def test_placeholder_campaign_resolves_its_target_from_the_case_record(monkeypat
     monkeypatch.chdir(ROOT)
     policy = json.loads((ROOT / "campaigns" / "neoantigen_placeholder.json").read_text(encoding="utf-8"))
     assert policy["case"].endswith("immunology_case_PLACEHOLDER.json")
-    assert "target" not in policy["bindcraft"], (
+    assert "target" not in policy["boltz"], (
         "a case-driven campaign must not also hard-code a fixture target"
     )
     target = case_mod.resolve_target(policy)

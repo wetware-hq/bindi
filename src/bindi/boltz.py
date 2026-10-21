@@ -1,4 +1,9 @@
-"""BoltzGen (Boltz-1/Boltz-2) binder-design integration helpers."""
+"""Boltz is the generator.
+
+BoltzGen (Boltz-1/Boltz-2) generates and ranks every design bindi produces. This module is
+the only generator integration in the repository: it builds the `boltzgen` command, locates
+the ranked table it writes, and normalises its columns for curation.
+"""
 
 from __future__ import annotations
 
@@ -7,12 +12,19 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+#: Generator identity, recorded in policies and traces so the generator is never implicit.
+GENERATOR_ID = "boltzgen"
+GENERATOR_NAME = "BoltzGen"
+GENERATOR_FAMILY = "Boltz"
+GENERATOR_TOOL = "BoltzGen"  # as tiered in src/bindi/data/tool_tiers.toml
+GENERATOR_CMD_ENV = "BOLTZGEN_CMD"
+
 # BoltzGen writes ranked metrics here (filtering step).
 RANKED_STAGE = Path("final_ranked_designs")
 RANKED_METRICS = "all_designs_metrics.csv"
 REFOLD_CIF = Path("intermediate_designs_inverse_folded") / "refold_cif"
 
-# Legacy BindCraft2 layout (still accepted when curating old campaigns).
+# Legacy pre-Boltz ranked-table layout (still accepted when curating old campaigns).
 LEGACY_RANK_STAGE = Path("3_Ranked")
 LEGACY_RANKED_NAME = "!_Ranked.csv"
 
@@ -42,7 +54,8 @@ MODALITY_TO_PROTOCOL: dict[str, str] = {
 
 
 def boltzgen_executable() -> str:
-    return os.environ.get("BOLTZGEN_CMD", os.environ.get("BINDCRAFT_CMD", "boltzgen"))
+    """The generator executable. Boltz only; there is no other generator to fall back to."""
+    return os.environ.get(GENERATOR_CMD_ENV, "boltzgen")
 
 
 def protocol_for_modality(modality: str | None) -> str:
@@ -64,7 +77,7 @@ def locate_ranked_table(project_folder: Path) -> Path | None:
 
 
 def normalize_row(row: dict[str, str]) -> dict[str, str]:
-    """Unify BoltzGen and legacy BindCraft ranked rows for bindi curation."""
+    """Unify BoltzGen and legacy ranked rows for bindi curation."""
     out = dict(row)
     if not (out.get("design") or out.get("Design")):
         ident = out.get("id") or out.get("sample_id") or ""

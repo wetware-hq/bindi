@@ -2,8 +2,9 @@
 
 The Scientist's condition on the first real design run is that every design is scored
 against the wild-type complex with a *stated* margin. bindi cannot compute that today:
-there is no structural scorer in this repo and no real design run has happened, so this
-module is a hook, not a scorer. With no scorer injected it returns
+there is no structural scorer in this repo whose threshold has been signed off for the
+Boltz-based pipeline, and no real design run has happened, so this module is a hook, not a
+scorer. With no scorer injected it returns
 `status: "not_computed"` and names what is missing; the design hold reads that status and
 refuses to start.
 
@@ -30,18 +31,34 @@ UNITS = (
 )
 
 NOT_COMPUTED_REASON = (
-    "No structural scorer is wired and no design run has happened, so no margin against the "
-    "wild-type complex exists. A margin is stated only when a scorer is injected and a real "
-    "design run has produced designs to score."
+    "No margin against the wild-type complex was computed. What is missing is a structural "
+    "scorer whose margin threshold has been signed off for the Boltz-based pipeline: none is "
+    "wired, and no design run has produced designs to score. A margin is stated only when a "
+    "scorer is injected and a real design run has produced designs to score; it clears the "
+    "margin stage only when that scorer's threshold has been signed off."
 )
 
 SEQUENCE_SCORER_IDS = frozenset({"class_bucket_v1", "blosum_position_v2"})
-STRUCTURAL_SCORER_ID = "bindcraft_modal_v1"
+
+#: No structural scorer is recognised. BindCraft-on-Modal was the only scorer the signed
+#: margin rule ever named, and it has been removed from the design path. Boltz is the
+#: generator; no Boltz-derived structural margin threshold has been signed off, so there is
+#: no scorer id this module may accept. This set stays empty until a threshold is signed.
+SIGNED_STRUCTURAL_SCORER_IDS: frozenset[str] = frozenset()
+
+MISSING_REQUIREMENT = (
+    "a structural scorer whose margin threshold has been signed off for the Boltz-based "
+    "pipeline"
+)
 
 THRESHOLD_NOT_ESTABLISHED_REASON = (
-    "Margin threshold is not established: only a structural scorer (bindcraft_modal_v1) that "
-    "clears PAIR-EASY at the signed 2×-spread threshold may establish the immunology margin "
-    "stage. Sequence-level scorers remain selectable for reproduction but do not clear the margin."
+    "Margin threshold is not established: no structural scorer whose margin threshold has "
+    "been signed off for the Boltz-based pipeline exists in this repository. Boltz is the "
+    "generator; BindCraft-on-Modal, the only scorer the signed margin rule previously named, "
+    "has been removed from the design path, and no replacement threshold has been signed off "
+    "by the Chief Scientist. Sequence-level scorers remain selectable for reproduction and "
+    "never clear the margin stage. Until such a threshold is signed, the immunology margin "
+    "stage refuses by construction and no margin number is written."
 )
 
 
@@ -60,33 +77,25 @@ def _threshold_fields(
     *,
     scorer_id: str | None,
     evidence_level: str | None,
-    threshold_status: str | None = None,
 ) -> dict[str, Any]:
-    if scorer_id in SEQUENCE_SCORER_IDS or evidence_level == "sequence_level_not_structure_validated":
-        return {
-            "threshold_status": "not_established",
-            "clears_margin_threshold": False,
-            "threshold_reason": THRESHOLD_NOT_ESTABLISHED_REASON,
-        }
-    if threshold_status:
-        return {
-            "threshold_status": threshold_status,
-            "clears_margin_threshold": threshold_status == "established",
-        }
-    if scorer_id == STRUCTURAL_SCORER_ID:
-        return {
-            "threshold_status": "not_established",
-            "clears_margin_threshold": False,
-            "threshold_reason": (
-                "Structural scorer invoked without a completed PAIR-EASY repeat-noise report; "
-                "threshold not established."
-            ),
-        }
-    return {
+    """Threshold verdict for a margin record.
+
+    There is exactly one outcome today: ``not_established``. ``SIGNED_STRUCTURAL_SCORER_IDS``
+    is empty, so no scorer id can clear the margin stage, and this function has no branch
+    that returns ``established``. That is deliberate: the threshold rule is signed content,
+    and admitting a Boltz-derived structural margin is a sign-off decision, not a code edit.
+    """
+    fields = {
         "threshold_status": "not_established",
         "clears_margin_threshold": False,
         "threshold_reason": THRESHOLD_NOT_ESTABLISHED_REASON,
+        "threshold_missing": MISSING_REQUIREMENT,
     }
+    if scorer_id in SEQUENCE_SCORER_IDS or evidence_level == "sequence_level_not_structure_validated":
+        fields["threshold_scorer_class"] = "sequence_level"
+    elif scorer_id:
+        fields["threshold_scorer_class"] = "unrecognised_scorer"
+    return fields
 
 
 def score_wild_type_margin(
@@ -96,7 +105,6 @@ def score_wild_type_margin(
     scorer: Callable[[str, str], float] | None = None,
     scorer_spec: str | None = None,
     scorer_id: str | None = None,
-    threshold_status: str | None = None,
     evidence_level: str | None = None,
 ) -> dict[str, Any]:
     """Return the margin record for a case. Honest about not being computed."""
@@ -157,7 +165,6 @@ def score_wild_type_margin(
         _threshold_fields(
             scorer_id=scorer_id or record.get("scorer_id"),
             evidence_level=record.get("evidence_level"),
-            threshold_status=threshold_status,
         )
     )
     return record

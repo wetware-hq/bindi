@@ -1,8 +1,8 @@
 """Read a design target from a synthetic clinical-immunology case record.
 
 The seam. Before this module the design target was only ever a literal string in the
-campaign policy (`policy.bindcraft.target`, e.g. "hPDL1") resolved by
-`policy.resolve_bindcraft_campaign`; nothing could take a target from a patient's own
+campaign policy (`policy.boltz.target`, e.g. "hPDL1") resolved by
+`policy.resolve_boltz_campaign`; nothing could take a target from a patient's own
 record. `resolve_target` adds one source of truth above that literal: a case record
 written by the clinical half (HLA type, mutant peptide, wild-type counterpart), with the
 policy literal kept as the fixture fallback. Nothing else in the pipeline changes.
@@ -182,7 +182,8 @@ def case_path_from(policy: dict[str, Any] | None = None, explicit: str | Path | 
     if explicit:
         return Path(explicit)
     if policy:
-        from_policy = policy.get("case") or (policy.get("bindcraft") or {}).get("case")
+        design_block = policy.get("boltz") or policy.get("bindcraft") or {}
+        from_policy = policy.get("case") or design_block.get("case")
         if from_policy:
             return Path(from_policy)
     from_env = os.environ.get(CASE_ENV)
@@ -202,16 +203,17 @@ def resolve_target(
     The returned record always says which of the two it came from (`source`) and whether
     the design hold applies (`signed`). It never invents a peptide.
     """
-    bindcraft = policy.get("bindcraft") or {}
+    # `bindcraft` is read only so an existing policy file still resolves; Boltz is the generator.
+    design_block = policy.get("boltz") or policy.get("bindcraft") or {}
     if case is None:
         path = case_path_from(policy, case_path)
         if path is not None:
             case = load_case(path)
     if case is None:
-        literal = bindcraft.get("target")
+        literal = design_block.get("target")
         if not literal:
             raise CaseError(
-                "no case record and no policy.bindcraft.target: nothing to design against"
+                "no case record and no policy.boltz.target: nothing to design against"
             )
         return {
             "source": "fixture",
@@ -294,8 +296,10 @@ def design_hold_reasons(
     if (margin or {}).get("threshold_status") != "established":
         reasons.append(
             "structural margin threshold is not established (status="
-            f"{(margin or {}).get('threshold_status', 'absent')!r}): room BIO decision USE "
-            "structure — sequence-only scorers do not clear the margin stage"
+            f"{(margin or {}).get('threshold_status', 'absent')!r}): what is missing is a "
+            "structural scorer whose margin threshold has been signed off for the Boltz-based "
+            "pipeline — room BIO decision USE structure, and sequence-only scorers do not "
+            "clear the margin stage"
         )
     return reasons
 

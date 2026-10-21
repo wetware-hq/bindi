@@ -239,7 +239,6 @@ def curate(
     *,
     project_folder: Path | str | None = None,
     workdir: Path | None = None,
-    use_bindcraft_rank: bool = False,
     use_boltz_rank: bool = False,
     use_ensemble: bool = False,
     fixture_path: bool = False,
@@ -269,7 +268,7 @@ def curate(
     data.assert_deployable(DEPLOYABLE_TOOLS)
 
     campaign_root = Path(project_folder or boltz["project_folder"])
-    rerank = use_boltz_rank or use_bindcraft_rank
+    rerank = use_boltz_rank
     if rerank:
         ranked_csv = boltz_mod.maybe_rerank_with_boltzgen(
             boltz, campaign_root, rank_on, workdir=base

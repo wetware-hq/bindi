@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -12,7 +11,6 @@ from . import VERSION
 from .case import CaseError, DesignHold
 from .curate import curate
 from . import design_engine
-from . import structural_margin
 from .case import load_case
 from .e2e import EXIT_CASE_ERROR, EXIT_HOLD, case_run
 from .generate import generate
@@ -55,18 +53,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Re-run BoltzGen filtering before building the gallery",
     )
-    cur.add_argument(
-        "--bindcraft-rank",
-        action="store_true",
-        help=argparse.SUPPRESS,  # legacy alias for --boltz-rank
-    )
 
     full = sub.add_parser("run", help="Generate then curate")
     full.add_argument("policy", nargs="?", help="Campaign policy JSON")
     full.add_argument("--workdir", type=Path, default=Path.cwd())
     full.add_argument("--dry-run", action="store_true")
     full.add_argument("--boltz-rank", action="store_true")
-    full.add_argument("--bindcraft-rank", action="store_true", help=argparse.SUPPRESS)
 
     e2e = sub.add_parser(
         "case-run",
@@ -136,35 +128,6 @@ def main(argv: list[str] | None = None) -> int:
         help="Evidence JSON path (default depends on --scorer).",
     )
 
-    smargin = sub.add_parser(
-        "structural-margin-repeat-noise",
-        help=(
-            "20-seed BindCraft-on-Modal margin spread for PAIR-EASY/PAIR-HARD and the case "
-            "neoantigen pair (requires MODAL_TOKEN or BINDI_BINDCRAFT_MODAL_STUB=1)."
-        ),
-    )
-    smargin.add_argument(
-        "case",
-        help="Signed immunology case JSON (WET-IMM-001 / SYNTH-WET-IMM-001 with benchmark_pairs).",
-    )
-    smargin.add_argument("--repeats", type=int, default=20)
-    smargin.add_argument("--seed-start", type=int, default=1000)
-    smargin.add_argument(
-        "--output",
-        type=Path,
-        help="Evidence JSON path (default evidence/structural_margin_repeat_noise.v1.json).",
-    )
-    smargin.add_argument(
-        "--stub",
-        action="store_true",
-        help="Use deterministic stub Modal client (CI / no GPU).",
-    )
-    smargin.add_argument(
-        "--skip-case-pair",
-        action="store_true",
-        help="Only run benchmark PAIR-HARD and PAIR-EASY, not the case neoantigen peptides.",
-    )
-
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
 
     stub = sub.add_parser("stub", help="Build a starter policy from a one-line query")
@@ -178,31 +141,6 @@ def main(argv: list[str] | None = None) -> int:
         parser.print_help()
         return 0
     command = args.command
-
-    if command == "structural-margin-repeat-noise":
-        case = load_case(args.case)
-        if not case.get("signature", {}).get("signed"):
-            raise SystemExit("case record must be signed for structural margin measurement")
-        try:
-            client = (
-                structural_margin.StubBindCraftModalClient()
-                if args.stub or os.environ.get("BINDI_BINDCRAFT_MODAL_STUB") == "1"
-                else structural_margin.client_from_env()
-            )
-        except structural_margin.ModalTokenMissingError as exc:
-            raise SystemExit(str(exc)) from exc
-        output = args.output or structural_margin.default_evidence_path()
-        report = structural_margin.write_repeat_noise_evidence(
-            case,
-            output,
-            repeats=args.repeats,
-            seed_start=args.seed_start,
-            client=client,
-            include_case_pair=not args.skip_case_pair,
-        )
-        json.dump(report, sys.stdout, indent=2, sort_keys=True)
-        sys.stdout.write("\n")
-        return 0
 
     if command == "sequence-design-repeat-noise":
         case = load_case(args.case)
@@ -271,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"{command} requires a policy path")
     policy = _load(policy_path)
 
-    boltz_rank = getattr(args, "boltz_rank", False) or getattr(args, "bindcraft_rank", False)
+    boltz_rank = getattr(args, "boltz_rank", False)
 
     if command == "generate":
         result = generate(policy, workdir=args.workdir, dry_run=args.dry_run)

@@ -23,7 +23,7 @@
         },
         "tool": {
           "type": "string",
-          "description": "Design tool name when kind is design_tool (e.g. bindcraft)."
+          "description": "Design tool name when kind is design_tool (e.g. boltzgen)."
         },
         "version": {
           "type": "string",

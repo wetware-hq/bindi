@@ -1,7 +1,7 @@
 {
   "schema": "bindi.immunology_case.v1",
   "case_id": "SYNTH-IMM-001",
-  "_PLACEHOLDER": "PLACEHOLDER. Invented patient written by the engineering half to exercise the seam. This is NOT the Physician's signed synthetic immunology patient; signature.signed is false, so the design hold stays in force and no real BindCraft/Modal run can start from this record.",
+  "_PLACEHOLDER": "PLACEHOLDER. Invented patient written by the engineering half to exercise the seam. This is NOT the Physician's signed synthetic immunology patient; signature.signed is false, so the design hold stays in force and no real Boltz design run can start from this record.",
   "presentation": {
     "summary": "Invented 58-year-old with a lung adenocarcinoma stand-in, progressing after first-line therapy. Every field on this record is made up for testing.",
     "diagnosis": "Lung adenocarcinoma (synthetic stand-in)",

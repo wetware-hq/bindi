@@ -25,7 +25,7 @@ The descriptor emitted by `bindi recruit` is defined in [src/bindi/resource.py](
 
 Before a production PD-L1 run, fetch campaign structures: `campaigns/fetch_targets.sh`.
 
-Campaigns conform to `bindi.policy.v1`, a thin wrapper around BoltzGen parameters plus curation metadata; legacy `bindcraft` keys and bare BindCraft-style JSON are migrated automatically. The shipped example `campaigns/pdl1.json` targets human PD-L1 via `campaigns/pdl1_miniprotein.yaml`. `bindi stub` can draft a policy from intent, but that draft must be edited before production. `bindi run <policy> --dry-run` smoke-tests curation on fixtures without a GPU and does not replace binding or structural validation.
+**Boltz (BoltzGen) is the generator**, and the only one: `policy.generator` is always `boltzgen`, the design block is `policy.boltz`, and `src/bindi/boltz.py` is the single generator integration. Campaigns conform to `bindi.policy.v1`, a thin wrapper around BoltzGen parameters plus curation metadata; a legacy `bindcraft` design block on an existing policy file is still read and migrated onto `boltz` with a `DeprecationWarning`, for backwards compatibility only. The shipped example `campaigns/pdl1.json` targets human PD-L1 via `campaigns/pdl1_miniprotein.yaml`. `bindi stub` can draft a policy from intent, but that draft must be edited before production. `bindi run <policy> --dry-run` smoke-tests curation on fixtures without a GPU and does not replace binding or structural validation.
 
 ## Gallery
 
@@ -60,9 +60,17 @@ The `index.json` manifest adds, beyond the ranked `entries`:
 
 `src/bindi/data/tool_tiers.toml` tags each tool `deployable` or `evaluation_only` with a licence name and citation URL. Commercial or licence-restricted tools (FEP+, PyRosetta, PBEE) are `evaluation_only` and must never be a dependency in a path handed to a lab; curation asserts this. New tools are added by editing the data file, not core code.
 
+## Compute configuration as code (Modal)
+
+`infra.json` at the repository root is the single source of truth for every fleet machine spec: `cpu`, `memory`, `timeout` (and `gpu`, when one is ever needed) per function, plus the image contents. `modal_app.py` reads it **at import time** and uses it to parameterise each `@app.function(...)` decorator, because Modal fixes a function's resources at deploy time, not at run time. A spec change therefore takes effect by redeploying a commit — there is no mutable cloud configuration to drift.
+
+The same file is baked into the image with `Image.add_local_file`, so a container reads back the exact config it was built from; every function returns that file's sha256 under `config`, which ties a result to a spec. `modal deploy modal_app.py` is the deploy step and is not run by the module.
+
+**No function declares a GPU.** Boltz is the generator and stays on the hosted design API; self-hosting it is out of scope. BindCraft-on-Modal, which did need a GPU, has been removed from the design path. `infra.json` states this in `gpu_statement`, and a test asserts no `gpu` key appears.
+
 ## Clinical case seam (end-to-end immunology case)
 
-The design target used to be a literal string in the campaign policy (`bindcraft.target`, e.g. `hPDL1`). `src/bindi/case.py` adds one source of truth above that literal: a **synthetic clinical-immunology case record** written by the clinical half, carrying the HLA type, the mutant peptide and its wild-type counterpart. The policy literal stays as the fixture fallback, so every existing campaign behaves exactly as before.
+The design target used to be a literal string in the campaign policy (`boltz.target`, e.g. `hPDL1`). `src/bindi/case.py` adds one source of truth above that literal: a **synthetic clinical-immunology case record** written by the clinical half, carrying the HLA type, the mutant peptide and its wild-type counterpart. The policy literal stays as the fixture fallback, so every existing campaign behaves exactly as before.
 
 ```bash
 bindi case-run fixtures/immunology_case_PLACEHOLDER.json --workdir /tmp/case1
@@ -76,13 +84,13 @@ One command, one JSONL trace, one case: `case record -> target extraction -> bin
 
 | Stage | Status today | Why |
 |---|---|---|
-| `design` | `fixture_backed` | No BindCraft, no Modal, no GPU. The ranked table is `fixtures/sample_ranked.csv`; the sequences are invented and unrelated to the case peptide. |
-| `margin_wild_type` | `not_computed` | Sequence-level scorers (`--sequence-design`, `class_bucket_v1`, `blosum_position_v2`) may state a margin for testing but **do not establish** the immunology threshold. Structural evaluation uses **BindCraft on Modal** (`bindi structural-margin-repeat-noise`, scorer `bindcraft_modal_v1`, `MODAL_TOKEN` required for live GPU). |
+| `design` | `fixture_backed` | No generator run, no GPU. The ranked table is `fixtures/sample_ranked.csv`; the sequences are invented and unrelated to the case peptide. |
+| `margin_wild_type` | `not_computed` | **There is no structural scorer whose margin threshold has been signed off for the Boltz-based pipeline.** BindCraft-on-Modal, the only scorer the signed margin rule ever named, has been removed from the design path; no replacement threshold has been signed off. Sequence-level scorers (`--sequence-design`, `class_bucket_v1`, `blosum_position_v2`) may state a margin for reproduction but **never** clear the margin stage. The stage refuses by construction and writes no margin number. |
 | `human_reference_gate` | `unbuilt` | bindi ships no human reference proteome. Supplied one (`--human-reference-fasta`), it runs an **exact k-mer containment screen** — not an alignment, not a validated homology search. It never returns `pass` without looking. |
 | `ward_handoff` | `not_invoked` | The hand-off record is written to `ward_handoff.json`, but ward runs fifteen fixed scenarios and exposes no entry point for an arbitrary case, so **the ward gates and the letter did not run**. |
 | `letter` | `not_produced` | Letters come from ward's letters endware, which this run does not reach. |
 
-**The design hold is enforced in code.** A real design run needs a signed case record, a `pass` from the human-reference gate, a stated wild-type margin, and an **established structural margin threshold** (PAIR-EASY positive control on `bindcraft_modal_v1`). `case.design_hold_reasons` names each missing condition. `bindi case-run --design` on an unsigned record refuses and exits `2` without calling BindCraft; `generate(..., dry_run=False)` on a policy naming a case record raises `DesignHold`. `fixtures/immunology_case_PLACEHOLDER.json` is an engineering placeholder written to exercise the seam — it is **not** a signed patient, and a test fails if any case fixture in this repo claims to be signed.
+**The design hold is enforced in code.** A real design run needs a signed case record, a `pass` from the human-reference gate, a stated wild-type margin, and an **established structural margin threshold**. That last condition cannot be met today: `margin.SIGNED_STRUCTURAL_SCORER_IDS` is empty and no code path returns `established`, so the hold stays in force until a structural scorer's threshold is signed off for the Boltz-based pipeline. Admitting one is a sign-off decision on signed content, not a code edit. `case.design_hold_reasons` names each missing condition. `bindi case-run --design` on an unsigned record refuses and exits `2` without calling the generator; `generate(..., dry_run=False)` on a policy naming a case record raises `DesignHold`. `fixtures/immunology_case_PLACEHOLDER.json` is an engineering placeholder written to exercise the seam — it is **not** a signed patient, and a test fails if any case fixture in this repo claims to be signed.
 
 Exit codes: `0` fixture-backed run completed, `1` case record invalid, `2` design refused by the hold, `3` a gate returned `fail`.
 

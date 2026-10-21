@@ -1,0 +1,53 @@
+{
+  "schema": "bindi.infra.v1",
+  "description": "Compute configuration for bindi's fleet functions on Modal. This file is the single source of truth for every machine spec: modal_app.py reads it at import time and uses it to parameterise each @app.function(...) decorator, because Modal fixes cpu/memory/gpu/timeout at deploy time, not at run time. A spec change therefore takes effect by redeploying a commit, never by editing invisible cloud state.",
+  "generator": "boltzgen",
+  "gpu_statement": "No function here declares a GPU. Boltz is the generator and stays on the hosted design API behind the human spend gate; self-hosting Boltz is out of scope by standing instruction, so no GPU container is declared for generation. BindCraft-on-Modal, which did require a GPU, has been removed from the design path. A GPU key is added here only when a specific function genuinely needs one and that need has been approved.",
+  "image": {
+    "python_version": "3.13",
+    "apt_install": ["mmseqs2", "ncbi-blast+"],
+    "pip_install": ["biopython>=1.83", "gemmi>=0.6.5", "numpy>=1.26"],
+    "local_files": {
+      "infra.json": "/bindi/infra.json"
+    },
+    "local_dirs": {
+      "src": "/bindi/src",
+      "fixtures": "/bindi/fixtures",
+      "schemas": "/bindi/schemas",
+      "evidence": "/bindi/evidence"
+    }
+  },
+  "app_name": "wetware-bindi-fleet",
+  "functions": {
+    "run_gates": {
+      "cpu": 2.0,
+      "memory": 4096,
+      "timeout": 900,
+      "purpose": "Both output gates (human-reference homology and hazard screen) with real mmseqs2 and BLAST+. Fails closed; returns bindi's gate records verbatim."
+    },
+    "curate_campaign": {
+      "cpu": 2.0,
+      "memory": 4096,
+      "timeout": 900,
+      "purpose": "Read a ranked table under project_folder and build a bindi.gallery.v1 gallery."
+    },
+    "case_run": {
+      "cpu": 2.0,
+      "memory": 8192,
+      "timeout": 1800,
+      "purpose": "One synthetic immunology case end to end, writing one JSONL trace. The design hold and the margin refusal are enforced inside bindi, unchanged by running remotely."
+    },
+    "ipsae_score": {
+      "cpu": 4.0,
+      "memory": 8192,
+      "timeout": 1800,
+      "purpose": "CPU ipSAE scoring from Boltz PAE matrices and predicted CIF structures. Numeric, no model weights, no GPU."
+    },
+    "sequence_design_repeat_noise": {
+      "cpu": 8.0,
+      "memory": 8192,
+      "timeout": 3600,
+      "purpose": "Repeat-noise distribution for the sequence-level designer across independent seeds. Sequence-level only: it is explicitly not structure-validated and never clears the margin stage."
+    }
+  }
+}

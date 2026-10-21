@@ -14,18 +14,16 @@ def run(
     *,
     workdir: Path | None = None,
     dry_run: bool = False,
-    use_bindcraft_rank: bool = False,
     use_boltz_rank: bool = False,
     use_ensemble: bool = False,
 ) -> dict[str, Any]:
     generation = generate(policy, workdir=workdir, dry_run=dry_run)
-    rerank = (use_boltz_rank or use_bindcraft_rank) and not dry_run
+    rerank = use_boltz_rank and not dry_run
     curation = curate(
         policy,
         project_folder=generation["project_folder"],
         workdir=workdir,
         use_boltz_rank=rerank,
-        use_bindcraft_rank=rerank,
         use_ensemble=use_ensemble,
         fixture_path=dry_run,
     )

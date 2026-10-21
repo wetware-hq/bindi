@@ -8,15 +8,11 @@
 # or terms URL so a reader can verify the tier.
 schema = "bindi.tool_tiers.v1"
 
+# BoltzGen is the generator. It is the only tool in the design path.
 [tools.BoltzGen]
 tier = "deployable"
 licence = "MIT"
 citation = "https://github.com/HannesStark/boltzgen/blob/main/LICENSE"
-
-[tools."BindCraft-on-Modal"]
-tier = "evaluation_only"
-licence = "BindCraft / PyRosetta stack (licence-restricted; Modal GPU evaluation only)"
-citation = "https://www.pyrosetta.org/home/licensing-pyrosetta"
 
 [tools."FEP+"]
 tier = "evaluation_only"

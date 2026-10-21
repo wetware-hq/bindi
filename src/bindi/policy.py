@@ -1,4 +1,10 @@
-"""Campaign policy: BoltzGen / Boltz settings plus bindi curation metadata."""
+"""Campaign policy: Boltz (BoltzGen) generator settings plus bindi curation metadata.
+
+Boltz is the generator. The design block is `policy.boltz` and `policy.generator` records
+the generator id explicitly, so reading a normalised policy tells you what generates.
+`LEGACY_DESIGN_KEY` ("bindcraft") is still *read* so existing policy files on disk keep
+loading; it is migrated onto `policy.boltz` with a DeprecationWarning and never written.
+"""
 
 from __future__ import annotations
 
@@ -8,9 +14,16 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from .boltz import protocol_for_modality
+from .boltz import GENERATOR_ID, protocol_for_modality
 
 SCHEMA = "bindi.policy.v1"
+
+#: Design block key. Boltz is the generator.
+DESIGN_KEY = "boltz"
+
+#: Read-only backwards compatibility: pre-Boltz policy files used this key. Migrated on
+#: load so an existing policy file still opens; never written back out.
+LEGACY_DESIGN_KEY = "bindcraft"
 
 
 def load_policy(path: str | Path | None, payload: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -24,9 +37,9 @@ def load_policy(path: str | Path | None, payload: dict[str, Any] | None = None) 
     return normalize_policy(document)
 
 
-def _migrate_bindcraft_block(bindcraft: dict[str, Any]) -> dict[str, Any]:
-    """Map legacy BindCraft2 campaign fields onto BoltzGen policy keys."""
-    boltz = deepcopy(bindcraft)
+def _normalize_boltz_block(block: dict[str, Any]) -> dict[str, Any]:
+    """Fill Boltz (BoltzGen) defaults, accepting legacy campaign field names."""
+    boltz = deepcopy(block)
     if "budget" not in boltz and boltz.get("number_of_final_designs") is not None:
         boltz["budget"] = boltz["number_of_final_designs"]
     if "num_designs" not in boltz:
@@ -42,13 +55,19 @@ def normalize_policy(document: dict[str, Any]) -> dict[str, Any]:
         raise TypeError("policy must be a JSON object")
     if document.get("schema") == SCHEMA:
         doc = document
-    elif "boltz" in document or "bindcraft" in document or "curation" in document or "gallery" in document:
+    elif (
+        DESIGN_KEY in document
+        or LEGACY_DESIGN_KEY in document
+        or "curation" in document
+        or "gallery" in document
+    ):
         doc = document
     else:
         # Bare legacy campaign JSON becomes the design block.
         return {
             "schema": SCHEMA,
-            "boltz": _migrate_bindcraft_block(deepcopy(document)),
+            "generator": GENERATOR_ID,
+            DESIGN_KEY: _normalize_boltz_block(deepcopy(document)),
             "curation": {},
             "gallery": "gallery",
         }
@@ -56,19 +75,22 @@ def normalize_policy(document: dict[str, Any]) -> dict[str, Any]:
     if doc.get("schema") != SCHEMA:
         doc = {**doc, "schema": SCHEMA}
 
-    if "boltz" not in doc and "bindcraft" in doc:
+    if DESIGN_KEY not in doc and LEGACY_DESIGN_KEY in doc:
         warnings.warn(
-            "policy.bindcraft is deprecated; use policy.boltz (BindCraft2 was replaced by BoltzGen).",
+            f"policy.{LEGACY_DESIGN_KEY} is deprecated; use policy.{DESIGN_KEY}. Boltz "
+            "(BoltzGen) is the generator; the legacy key is read for backwards "
+            "compatibility only.",
             DeprecationWarning,
             stacklevel=2,
         )
-        doc["boltz"] = _migrate_bindcraft_block(doc.pop("bindcraft"))
-    elif "boltz" in doc and "bindcraft" in doc:
-        doc.pop("bindcraft", None)
+        doc[DESIGN_KEY] = _normalize_boltz_block(doc.pop(LEGACY_DESIGN_KEY))
+    elif DESIGN_KEY in doc and LEGACY_DESIGN_KEY in doc:
+        doc.pop(LEGACY_DESIGN_KEY, None)
 
-    boltz = doc.get("boltz")
+    boltz = doc.get(DESIGN_KEY)
     if isinstance(boltz, dict):
-        doc["boltz"] = _migrate_bindcraft_block(boltz)
+        doc[DESIGN_KEY] = _normalize_boltz_block(boltz)
+    doc["generator"] = GENERATOR_ID
     return doc
 
 
@@ -77,7 +99,7 @@ def resolve_boltz_campaign(
     *,
     workdir: Path | None = None,
 ) -> tuple[dict[str, Any], Path]:
-    """Return BoltzGen campaign dict and the gallery directory path."""
+    """Return the Boltz (BoltzGen) campaign dict and the gallery directory path."""
     policy = normalize_policy(policy)
     boltz = deepcopy(policy.get("boltz") or {})
     if not boltz:
@@ -98,15 +120,6 @@ def resolve_boltz_campaign(
     return boltz, gallery_path
 
 
-def resolve_bindcraft_campaign(
-    policy: dict[str, Any],
-    *,
-    workdir: Path | None = None,
-) -> tuple[dict[str, Any], Path]:
-    """Deprecated alias for :func:`resolve_boltz_campaign`."""
-    return resolve_boltz_campaign(policy, workdir=workdir)
-
-
 def policy_from_nl_stub(query: str, **overrides: Any) -> dict[str, Any]:
     """Minimal helper for agents filling a campaign from natural language."""
     boltz = {
@@ -117,9 +130,10 @@ def policy_from_nl_stub(query: str, **overrides: Any) -> dict[str, Any]:
         "design_spec": overrides.pop("design_spec", "campaigns/pdl1_miniprotein.yaml"),
     }
     boltz.update(overrides)
-    boltz = _migrate_bindcraft_block(boltz)
+    boltz = _normalize_boltz_block(boltz)
     return {
         "schema": SCHEMA,
+        "generator": GENERATOR_ID,
         "query": query,
         "boltz": boltz,
         "curation": {

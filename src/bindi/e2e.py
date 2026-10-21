@@ -254,8 +254,10 @@ def case_run(
             requested="real_design_run",
             hold_reasons=hold_reasons,
             note=(
-                "A real Boltz design run was requested. The hold is enforced here: "
-                "nothing was submitted."
+                "A real Boltz design run was requested. Boltz runs only on the hosted "
+                "Boltz API and submission spends money, so two refusals stand in front of "
+                "it: this design hold, and the APPR human spend gate. The hold is enforced "
+                "here, before any request is built: nothing was submitted, nothing spent."
             ),
         )
         trace.emit("case_summary", "refused", exit_code=EXIT_HOLD, hold_reasons=hold_reasons)
@@ -378,6 +380,8 @@ def case_run(
             campaign_file=generation["campaign_file"],
             designs_are_real=False,
             generator=boltz_mod.GENERATOR_ID,
+            generator_engine=boltz_mod.GENERATOR_ENGINE,
+            submitted=False,
             hold_reasons=hold_reasons,
             note=(
                 "No design was performed. The ranked table is bindi's fixture "

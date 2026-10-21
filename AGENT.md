@@ -38,7 +38,7 @@ Human-facing overview: [README.md](README.md). Machine-readable contract: `bindi
 
 Capabilities:
 
-- **generate** — run `boltzgen run` for the campaign.
+- **generate** — submit the campaign to the hosted Boltz API (behind the APPR spend gate).
 - **curate** — rank designs and materialize the gallery from an existing BoltzGen output directory (`project_folder`).
 
 Prefer **`bindi run`** unless generation or curation must run separately (e.g. re-curate after manual QC).
@@ -55,7 +55,7 @@ Recruit bindi when:
 
 1. The task explicitly asks for **de novo binder design** or a **shortlist of binders** against a target.
 2. BoltzGen-appropriate inputs exist or can be resolved (`design_spec` YAML, protocol, optional binding-site constraints in the spec).
-3. The environment provides **`boltzgen` on PATH** (see `containers/Dockerfile`) or you will use **`--dry-run`** for pipeline validation only.
+3. The environment provides **`BOLTZ_API_KEY`** for the hosted Boltz API, and an APPR approval record (`BINDI_APPR_APPROVAL`) exists for the exact request body if a real run is intended; otherwise you will use **`--dry-run`** for pipeline validation only. There is no local generator binary and Boltz is never self-hosted.
 
 Do not recruit bindi for targets or modalities outside BoltzGen’s protocols without checking [BoltzGen](https://github.com/HannesStark/boltzgen) documentation first.
 
@@ -109,16 +109,15 @@ bindi run campaign.json --workdir /work
 ```bash
 bindi generate campaign.json --workdir /work
 bindi curate campaign.json --workdir /work
-# Optional: bindi curate ... --boltz-rank  # re-run BoltzGen filtering
 ```
 
-Set `BOLTZGEN_CMD` if the executable is not named `boltzgen`.
+`generate` builds the hosted-API request, writes it to `<project_folder>/design_request.json`, and submits only when the APPR gate is open for that body's sha256; otherwise it returns `status: "refused"` and spends nothing. The hosted API ranks server-side, so there is no local re-ranking step.
 
-**Worker container** (installs BoltzGen via pip; GPU host required):
+**Worker container** (no GPU, no model weights; needs `BOLTZ_API_KEY`):
 
 ```bash
 docker build -f containers/Dockerfile -t bindi:local .
-docker run --gpus all -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
+docker run -e BOLTZ_API_KEY -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
 ```
 
 Default container command is `bindi recruit` (descriptor only).
@@ -146,7 +145,7 @@ Read `index.json` for programmatic handoff. Summarize for the user:
 - Paths to structures and sequences (`Binder_Sequence` when present)
 - Campaign folder (`manifest.campaign`) for traceability
 
-If `generate` failed, do not claim a curated shortlist; surface BoltzGen stderr/exit code and whether partial outputs exist under `project_folder`.
+If `generate` was refused or failed, do not claim a curated shortlist; surface the refusal reason (spend gate, design hold, missing credential) or the API error and run status, and whether partial outputs exist under `project_folder`.
 
 ## Policy fields (quick reference)
 
@@ -186,7 +185,7 @@ gallery_path = outcome["curate"]["gallery"]
 
 ## Engineering constraints
 
-- **Minimum surface area:** do not fork BoltzGen inside bindi; pass through the `boltzgen` CLI and design-spec YAML.
+- **Minimum surface area:** do not fork or self-host Boltz inside bindi; pass the design-spec YAML through to the hosted Boltz API.
 - **Idempotent curation:** `curate` can rerun on the same `project_folder` to refresh the gallery after new designs land.
 - **No silent success:** non-zero `boltzgen run` exit codes raise; report them to the user.
 - **LoC efficiency:** extend behavior via policy JSON and BoltzGen options before adding Python.

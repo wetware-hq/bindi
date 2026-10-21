@@ -1,0 +1,93 @@
+# Campaign one design specification: de novo binders against NY-ESO-1 157-165 / HLA-A*02:01.
+#
+# Target id: NYESO1-A0201. Written for the OFFICIAL HOSTED Boltz API
+# (POST /compute/v1/protein/design, https://api.boltz.bio/docs/guides/protein-design/).
+# Boltz is the generator and is never self-hosted; bindi reads this file and builds the
+# request body from it in src/bindi/boltz_hosted.py. Field names here are the API's own.
+#
+# SUBMITTING THIS SPEC SPENDS MONEY. Nothing in this repository submits it: submission is
+# behind the APPR human spend gate (src/bindi/spend_gate.py) and is pinned to the sha256 of
+# the exact request body. Nothing has been submitted and nothing has been spent.
+#
+# ---- Provenance of every value below ------------------------------------------------
+# Clinical case, target choice, peptide and restricting allele:
+#   /workspace/wetware/binder-design/v3/NYESO1-A0201/CASE.md (case version 1.0, 2026-10-20)
+#   "Antigen NY-ESO-1 (cancer-testis; shared, not private) | Epitope residues 157-165 |
+#    Peptide SLLMWITQC (9-mer) | Restricting allele HLA-A*02:01 | Complex 3-chain class I
+#    pMHC (heavy chain, beta-2-microglobulin, peptide)".
+# Chain A / chain B sequences, request shape, and 0-based per-chain epitope indexing:
+#   /workspace/wetware/binder-design/v2/boltz-api-pmhc-schema-2026-10-20.md, which records
+#   live read-only schema verification on 2026-10-20 (HTTP 200, nothing submitted): a
+#   three-chain target validated; a 9-residue chain C was accepted; the server reported
+#   "Epitope residue index 9 out of range (0-8) for chain 'C'", confirming 0-based indices;
+#   chain A = UniProt P04439 residues 25-299 (275 aa, mature heavy chain from Gly1),
+#   chain B = UniProt P61769 residues 21-119 (99 aa, beta-2-microglobulin).
+#   Sequences copied byte-identically from
+#   /workspace/wetware/binder-design/v3/NOT-SUBMITTED-nyeso1-300designs-typebinder.json.
+# Request shape: the legacy {num_proteins, target, binder_specification} body is what
+#   validated live for a scaffold-free binder; the type-discriminated type:"binder" branch
+#   rejected a de-novo binder entity on 2026-10-20. bindi defaults to the legacy shape and
+#   can emit either (boltz_hosted.REQUEST_SHAPES).
+#
+# ---- NEEDS MATHEW'S JUDGEMENT (not invented here) -------------------------------------
+# 1. CASE RECORD MISMATCH. This spec's chain C is SLLMWITQC (NY-ESO-1, a shared
+#    cancer-testis antigen). No signed case record for it exists in this repository: the
+#    campaign policy campaigns/neoantigen_placeholder.json points at
+#    fixtures/immunology_case_PLACEHOLDER.json, whose peptide is YLDPETGDW, and
+#    evidence/immunology_case_WET_IMM_001.v1.json carries YLMSYNGVV. A real run needs a
+#    case record whose peptide IS the peptide designed against. Not reconciled here.
+# 2. NEGATIVE DESIGN (non_binding_residues) IS ABSENT, deliberately. Three candidate panels
+#    exist (conservative / targeted / aggressive) in
+#    /workspace/wetware/binder-design/v3/nonbinding-panel-2026-10-20.md, "pending BIO
+#    Physician residue-level sign-off", with the targeted panel recommended by BIO
+#    Scientist. Choosing one is a scientific decision with a safety argument attached
+#    (CASE.md: a framework-directed binder is unsafe, not merely weak), so no panel is
+#    written in. Nothing here steers designs away from invariant HLA framework.
+# 3. CAMPAIGN SIZE AND SPEND. Priced live (read-only) on 2026-10-20: 300 designs at this
+#    complex size = $15.0000 (300 units @ $0.0500), which is the entire standing APPR cap.
+#    num_proteins is therefore NOT set in this file; the campaign policy supplies it and
+#    the shipped policy uses the API minimum of 10. The real campaign number is Mathew's.
+# 4. BINDER LENGTH 60..100 aa is carried over from the staged prior-art request, chosen to
+#    stay under the 512-residue cost tier (383 aa of target + 60-100 aa binder). It is a
+#    design choice, not a result.
+# 5. TEMPLATE-FREE vs REAL STRUCTURE. This spec gives sequences (no_template path, the one
+#    verified). Designing against a real pMHC crystal structure (1DUZ / 2BNQ / 3MRE) via
+#    `templates` + from_template is documented but unverified here, and would change
+#    residue numbering to CIF author numbering.
+#
+# Scope: in vitro only, synthetic/benchmark use. Not a medical device, not a release.
+
+schema: bindi.design_spec.v1
+target_id: NYESO1-A0201
+case_reference: wetware/binder-design/v3/NYESO1-A0201/CASE.md
+
+target:
+  entities:
+    # Chain A: HLA-A*02:01 heavy chain ectodomain, UniProt P04439 residues 25-299 (275 aa).
+    - type: protein
+      chain_ids: ["A"]
+      value: GSHSMRYFFTSVSRPGRGEPRFIAVGYVDDTQFVRFDSDAASQRMEPRAPWIEQEGPEYWDQETRNVKAQSQTDRVDLGTLRGYYNQSEAGSHTIQIMYGCDVGSDGRFLRGYRQDAYDGKDYIALNEDLRSWTAADMAAQITKRKWEAAHEAEQLRAYLDGTCVEWLRRYLENGKETLQRTDPPKTHMTHHPISDHEATLRCWALGFYPAEITLTWQRDGEDQTQDTELVETRPAGDGTFQKWAAVVVPSGEEQRYTCHVQHEGLPKPLTLRWE
+    # Chain B: beta-2-microglobulin, UniProt P61769 residues 21-119 (99 aa).
+    - type: protein
+      chain_ids: ["B"]
+      value: IQRTPKIQVYSRHPAENGKSNFLNCYVSGFHPSDIEVDLLKNGERIEKVEHSDLSFSKDWSFYLLYYTEFTPTEKDEYACRVNHVTLSQPKIVKWDRDM
+    # Chain C: the epitope itself, NY-ESO-1 157-165. Every residue is epitope: the whole
+    # point of the campaign is a binder that reads the peptide, not the HLA framework.
+    # Indices are 0-based per chain and 0-8 is the full valid range for this 9-mer.
+    - type: protein
+      chain_ids: ["C"]
+      value: SLLMWITQC
+      epitope_residues: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+    # non_binding_residues: deliberately absent. See NEEDS MATHEW item 2.
+
+binder_specification:
+  modality: custom_protein
+  entities:
+    - type: designed_protein
+      chain_ids: ["D"]
+      # Design length RANGE string, not a sequence. See NEEDS MATHEW item 4.
+      value: "60..100"
+
+# global_design_filters is deliberately omitted: per the API docs, omitting it keeps the
+# default excluded_amino_acids ["C"], which applies to the designed chain D only and leaves
+# the terminal cysteine of SLLMWITQC untouched.

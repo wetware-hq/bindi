@@ -239,7 +239,6 @@ def curate(
     *,
     project_folder: Path | str | None = None,
     workdir: Path | None = None,
-    use_boltz_rank: bool = False,
     use_ensemble: bool = False,
     fixture_path: bool = False,
 ) -> dict[str, Any]:
@@ -267,14 +266,10 @@ def curate(
     # Deployable-path licence guard: nothing evaluation_only may be a dependency here.
     data.assert_deployable(DEPLOYABLE_TOOLS)
 
+    # The hosted API ranks server-side and returns ranked results; there is no local
+    # filtering step to re-run, so curation reads the ranked table it was given.
     campaign_root = Path(project_folder or boltz["project_folder"])
-    rerank = use_boltz_rank
-    if rerank:
-        ranked_csv = boltz_mod.maybe_rerank_with_boltzgen(
-            boltz, campaign_root, rank_on, workdir=base
-        )
-    else:
-        ranked_csv = _locate_ranked_table(campaign_root)
+    ranked_csv = _locate_ranked_table(campaign_root)
     if ranked_csv is None:
         raise FileNotFoundError(f"no ranked table under {campaign_root}")
 

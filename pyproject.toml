@@ -1,7 +1,7 @@
 [project]
 name = "bindi"
 version = "0.2.0"
-description = "Generate and curate protein binders via BoltzGen (Boltz-1/Boltz-2) campaigns."
+description = "Generate and curate protein binders via the hosted Boltz API (Boltz-1/Boltz-2)."
 readme = "README.md"
 requires-python = ">=3.11"  # tomllib (stdlib) for cited TOML data files
 license = "MIT"
@@ -17,6 +17,7 @@ dependencies = [
   "biopython>=1.83",
   "gemmi>=0.6.5",
   "numpy>=1.26",
+  "pyyaml>=6.0",  # hosted Boltz API design specs are YAML (campaigns/*.yaml)
 ]
 
 [project.urls]

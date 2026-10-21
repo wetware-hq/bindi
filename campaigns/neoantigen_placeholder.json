@@ -7,11 +7,21 @@
     "modality": "binder",
     "campaign_name": "SYNTH-IMM-001",
     "number_of_final_designs": 3,
-    "project_folder": "results/SYNTH-IMM-001"
+    "project_folder": "results/SYNTH-IMM-001",
+    "design_spec": "campaigns/nyeso1_a0201_pmhc.yaml",
+    "design_spec_target_id": "NYESO1-A0201",
+    "num_designs": 10
   },
   "curation": {
-    "rank_on": ["i_pDAE"],
+    "rank_on": [
+      "i_pDAE"
+    ],
     "top_n": 3
   },
-  "gallery": "gallery/SYNTH-IMM-001"
+  "gallery": "gallery/SYNTH-IMM-001",
+  "_needs_mathew": [
+    "Case/peptide mismatch: design_spec campaigns/nyeso1_a0201_pmhc.yaml designs against NY-ESO-1 157-165 SLLMWITQC (HLA-A*02:01), while `case` points at fixtures/immunology_case_PLACEHOLDER.json whose peptide is YLDPETGDW. A real run needs a signed case record for the peptide actually being designed against; this is not reconciled in code.",
+    "num_designs is the API minimum (10), not a campaign size. 300 designs prices at $15.0000, the whole standing APPR cap.",
+    "No non_binding_residues panel is selected; see the NEEDS MATHEW notes in the design spec."
+  ]
 }

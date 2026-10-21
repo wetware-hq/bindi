@@ -17,15 +17,15 @@ Checkpoint inhibitors, targeted biologics, and related modalities need molecules
 
 The **campaign** specifies the target, binder modality, BoltzGen design spec, output paths, and ranking rules. It is usually filled from natural-language intent and should be reviewed before any GPU job. The **gallery** is a ranked, scored shortlist with a manifest and structure files for laboratory follow-up.
 
-The descriptor emitted by `bindi recruit` is defined in [src/bindi/resource.py](src/bindi/resource.py). The repository includes `containers/Dockerfile` to build a worker image whose entrypoint is `bindi` and that installs [BoltzGen](https://github.com/HannesStark/boltzgen) (`boltzgen` on `PATH`).
+The descriptor emitted by `bindi recruit` is defined in [src/bindi/resource.py](src/bindi/resource.py). The repository includes `containers/Dockerfile` to build a worker image whose entrypoint is `bindi`; the image needs no GPU and no model weights, because generation happens on the hosted Boltz API.
 
 ## Workflow
 
-**bindi 🐨** orchestrates [BoltzGen](https://github.com/HannesStark/boltzgen) (Boltz-1 diffusion design, Boltz-2 refolding and confidence). **Generate** (`bindi generate`) calls `boltzgen run` using the policy’s `boltz` block (design-spec YAML, protocol, `num_designs`, `budget`) and requires `boltzgen` on `PATH` (or `BOLTZGEN_CMD`) and a GPU for production runs. **Curate** (`bindi curate`) reads metrics under `project_folder` (typically `final_ranked_designs/all_designs_metrics.csv`), applies `curation.rank_on` and `curation.top_n` (default ranking uses Boltz-2 interface confidence `design_to_target_iptm`; bindi reports a relative ranking, not an energy), and writes the gallery path named in the policy.
+**bindi 🐨** orchestrates Boltz (Boltz-1 diffusion design, Boltz-2 refolding and confidence) on the **official hosted Boltz API**. **Generate** (`bindi generate`) builds a `POST /compute/v1/protein/design` request from the policy’s `boltz` block (design-spec YAML, modality, `num_designs`) and submits it only if the APPR spend gate is open; there is no local `boltzgen` binary, no GPU and no model weights on our side, and self-hosting Boltz is not permitted. **Curate** (`bindi curate`) reads metrics under `project_folder` (typically `final_ranked_designs/all_designs_metrics.csv`), applies `curation.rank_on` and `curation.top_n` (default ranking uses Boltz-2 interface confidence `design_to_target_iptm`; bindi reports a relative ranking, not an energy), and writes the gallery path named in the policy.
 
 Before a production PD-L1 run, fetch campaign structures: `campaigns/fetch_targets.sh`.
 
-**Boltz (BoltzGen) is the generator**, and the only one: `policy.generator` is always `boltzgen`, the design block is `policy.boltz`, and `src/bindi/boltz.py` is the single generator integration. Campaigns conform to `bindi.policy.v1`, a thin wrapper around BoltzGen parameters plus curation metadata; a legacy `bindcraft` design block on an existing policy file is still read and migrated onto `boltz` with a `DeprecationWarning`, for backwards compatibility only. The shipped example `campaigns/pdl1.json` targets human PD-L1 via `campaigns/pdl1_miniprotein.yaml`. `bindi stub` can draft a policy from intent, but that draft must be edited before production. `bindi run <policy> --dry-run` smoke-tests curation on fixtures without a GPU and does not replace binding or structural validation.
+**Boltz is the generator**, and the hosted API is the only path to it: `policy.generator` is always `boltzgen`, the design block is `policy.boltz`, `src/bindi/boltz.py` holds the job-parameter translation and `src/bindi/boltz_hosted.py` is the only generator client. Nothing executes a local generator. Campaigns conform to `bindi.policy.v1`, a thin wrapper around BoltzGen parameters plus curation metadata; a legacy `bindcraft` design block on an existing policy file is still read and migrated onto `boltz` with a `DeprecationWarning`, for backwards compatibility only. The shipped example `campaigns/pdl1.json` targets human PD-L1 via `campaigns/pdl1_miniprotein.yaml`. `bindi stub` can draft a policy from intent, but that draft must be edited before production. `bindi run <policy> --dry-run` smoke-tests curation on fixtures without a GPU and does not replace binding or structural validation.
 
 ## Gallery
 
@@ -59,6 +59,20 @@ The `index.json` manifest adds, beyond the ranked `entries`:
 ### Licence tiers
 
 `src/bindi/data/tool_tiers.toml` tags each tool `deployable` or `evaluation_only` with a licence name and citation URL. Commercial or licence-restricted tools (FEP+, PyRosetta, PBEE) are `evaluation_only` and must never be a dependency in a path handed to a lab; curation asserts this. New tools are added by editing the data file, not core code.
+
+## Hosted Boltz API (the only generator path)
+
+Generation runs on the official hosted API at `https://api.boltz.bio`. The credential is read from **`BOLTZ_API_KEY`** and sent as an **`x-api-key`** request header, exactly as [the official authentication guide](https://api.boltz.bio/docs/guides/authentication/) specifies; bindi never reads a key from the repository, never logs one, and never writes one into a request record, a trace or a provenance block. Without a key every entry point fails closed with a message naming the variable. The official client is `pip install boltz-api`; bindi speaks the documented REST interface directly (`src/bindi/boltz_hosted.py`) rather than taking the dependency.
+
+| Call | Cost | Where |
+|---|---|---|
+| `GET /compute/v1/auth/me` | free, read-only | `boltz_hosted.auth_check()` |
+| `POST /compute/v1/protein/design/estimate-cost` | free, creates no run | `boltz_hosted.estimate_cost()`, never called automatically |
+| `POST /compute/v1/protein/design` | **spends real money** | `boltz_hosted.submit_design()`, behind the APPR gate |
+
+**Where submission stops.** `submit_design` hashes the exact request body and asks `bindi.spend_gate` before it so much as reads the credential, so a closed gate cannot reach the network. The gate is **`APPR`**, a human approval record (`bindi.appr_approval.v1`) whose path comes from `BINDI_APPR_APPROVAL`; it must name its approver, carry a positive `cap_usd` at or above the estimated cost, set `on_deny: HALT`, carry an unexpired `expires_at`, and pin `request_sha256` to the body being submitted. Anything missing, malformed, expired, under-capped, unpriced, or approving a different body means closed, and closed raises. There is no function inside bindi that opens the gate, and `bindi generate` on a real run returns `status: "refused"` with the gate's own reasons rather than submitting. A real run also still needs the design hold to clear, which it cannot today (see the margin stage below).
+
+Run provenance recorded for every submission, submitted or refused: generator and engine, endpoint, auth header name and credential *variable* name, pipeline (`boltzprot`), request shape, `request_sha256`, `design_spec` path and sha256, `num_proteins`, modality, the job id and run status when one exists, and the gate record (approver, cap, estimated cost, open/closed).
 
 ## Compute configuration as code (Modal)
 
@@ -96,18 +110,18 @@ Exit codes: `0` fixture-backed run completed, `1` case record invalid, `2` desig
 
 ## Bar
 
-`pip install -e .` then `pytest` (101 passed; 11 skipped without `mmseqs2` on PATH) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
+`pip install -e .` then `pytest` (155 passed; 11 of those skip without `mmseqs2` on PATH) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
 
 ## Deployment
 
-Install from source with `pip install -e .` or `uv pip install -e .`, install BoltzGen (`pip install boltzgen`) on a GPU host, fetch campaign targets (`campaigns/fetch_targets.sh`), then run `bindi run campaigns/pdl1.json`, or build and run the container:
+Install from source with `pip install -e .` or `uv pip install -e .`, set `BOLTZ_API_KEY` for the hosted Boltz API, fetch campaign targets (`campaigns/fetch_targets.sh`), then run `bindi run campaigns/pdl1.json`, or build and run the container:
 
 ```bash
 docker build -f containers/Dockerfile -t bindi:local .
-docker run --gpus all -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
+docker run -e BOLTZ_API_KEY -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
 ```
 
-BoltzGen downloads model weights on first use (~6 GB for Boltz checkpoints; additional cache for inverse folding / ESMFold2 depending on protocol). Set `BOLTZ_CACHE` or BoltzGen’s `--cache` to a persistent volume in production.
+No model weights are downloaded and no GPU is required: the hosted API runs the model. Results (structures, `metrics.json`, `pae.npz`) are retrieved from the run's artifacts; download URLs expire, and the API retains data for 7 days by default.
 
 ## License
 

@@ -1,14 +1,14 @@
-"""Boltz is the generator.
+"""Boltz is the generator, and it runs on the official hosted Boltz API.
 
-BoltzGen (Boltz-1/Boltz-2) generates and ranks every design bindi produces. This module is
-the only generator integration in the repository: it builds the `boltzgen` command, locates
-the ranked table it writes, and normalises its columns for curation.
+There is no local generator. `boltzgen` is never executed: Boltz self-hosting is forbidden
+by standing instruction, so the only generator path is `https://api.boltz.bio` via
+`bindi.boltz_hosted`. This module holds the parts that are not the network call: the job
+parameter translation (`job_parameters`), the design-spec resolver, the ranked-table layout
+this repo reads, and the column normalisation curation needs.
 """
 
 from __future__ import annotations
 
-import os
-import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -17,7 +17,7 @@ GENERATOR_ID = "boltzgen"
 GENERATOR_NAME = "BoltzGen"
 GENERATOR_FAMILY = "Boltz"
 GENERATOR_TOOL = "BoltzGen"  # as tiered in src/bindi/data/tool_tiers.toml
-GENERATOR_CMD_ENV = "BOLTZGEN_CMD"
+GENERATOR_ENGINE = "hosted_boltz_api"
 
 # BoltzGen writes ranked metrics here (filtering step).
 RANKED_STAGE = Path("final_ranked_designs")
@@ -41,6 +41,22 @@ METRIC_ALIASES: dict[str, str] = {
     "pLDDT": "design_plddt",
 }
 
+#: `num_proteins` floor documented by the API (10..1_000_000).
+MIN_NUM_PROTEINS = 10
+
+#: bindi modality -> hosted API `modality` for a binder design job.
+MODALITY_TO_API: dict[str, str] = {
+    "binder": "custom_protein",
+    "miniprotein": "custom_protein",
+    "protein": "custom_protein",
+    "custom_protein": "custom_protein",
+    "peptide": "peptide",
+    "nanobody": "nanobody",
+    "vhh": "nanobody",
+    "antibody": "antibody",
+    "fab": "antibody",
+}
+
 MODALITY_TO_PROTOCOL: dict[str, str] = {
     "binder": "protein-anything",
     "miniprotein": "protein-anything",
@@ -53,14 +69,15 @@ MODALITY_TO_PROTOCOL: dict[str, str] = {
 }
 
 
-def boltzgen_executable() -> str:
-    """The generator executable. Boltz only; there is no other generator to fall back to."""
-    return os.environ.get(GENERATOR_CMD_ENV, "boltzgen")
-
-
 def protocol_for_modality(modality: str | None) -> str:
     key = (modality or "binder").strip().lower()
     return MODALITY_TO_PROTOCOL.get(key, "protein-anything")
+
+
+def modality_for_api(modality: str | None) -> str:
+    """Hosted-API binder modality for a bindi modality name."""
+    key = (modality or "binder").strip().lower()
+    return MODALITY_TO_API.get(key, "custom_protein")
 
 
 def locate_ranked_table(project_folder: Path) -> Path | None:
@@ -98,9 +115,9 @@ def resolve_design_spec_path(boltz: dict[str, Any], workdir: Path) -> Path:
     if not spec:
         target = boltz.get("target")
         raise ValueError(
-            "policy.boltz.design_spec is required for BoltzGen runs "
+            "policy.boltz.design_spec is required for a hosted Boltz design run "
             f"(target={target!r} alone is not enough). "
-            "Add a design specification YAML; see campaigns/pdl1_miniprotein.yaml."
+            "Add a design specification YAML; see campaigns/nyeso1_a0201_pmhc.yaml."
         )
     path = Path(spec)
     if not path.is_absolute():
@@ -110,67 +127,29 @@ def resolve_design_spec_path(boltz: dict[str, Any], workdir: Path) -> Path:
     return path
 
 
-def build_boltzgen_command(
-    boltz: dict[str, Any],
-    *,
-    workdir: Path,
-    design_spec: Path,
-    extra_args: list[str] | None = None,
-    filtering_only: bool = False,
-) -> list[str]:
-    project = Path(boltz["project_folder"])
-    cmd: list[str] = [
-        boltzgen_executable(),
-        "run",
-        str(design_spec),
-        "--output",
-        str(project),
-        "--protocol",
-        str(boltz.get("protocol") or protocol_for_modality(boltz.get("modality"))),
-    ]
-    num_designs = boltz.get("num_designs")
-    budget = boltz.get("budget") or boltz.get("number_of_final_designs")
-    if num_designs is not None:
-        cmd.extend(["--num_designs", str(int(num_designs))])
-    if budget is not None:
-        cmd.extend(["--budget", str(int(budget))])
-    if boltz.get("alpha") is not None:
-        cmd.extend(["--alpha", str(boltz["alpha"])])
-    if boltz.get("devices") is not None:
-        cmd.extend(["--devices", str(boltz["devices"])])
-    if boltz.get("reuse"):
-        cmd.append("--reuse")
-    if filtering_only:
-        cmd.extend(["--steps", "filtering", "--reuse"])
-    if extra_args:
-        cmd.extend(extra_args)
-    return cmd
+def job_parameters(boltz: dict[str, Any]) -> dict[str, Any]:
+    """Translate a policy `boltz` block into hosted-API job parameters.
 
+    This is the surviving half of what used to build a `boltzgen run ...` command line: the
+    parameter translation, with no process execution. `bindi.boltz_hosted` turns these into
+    the request body for `POST /compute/v1/protein/design`.
 
-def maybe_rerank_with_boltzgen(
-    boltz: dict[str, Any],
-    project_folder: Path,
-    rank_on: list[str],
-    *,
-    workdir: Path,
-) -> Path | None:
-    """Re-run BoltzGen filtering; rank_on is recorded in the manifest but filtering uses BoltzGen defaults."""
-    spec = boltz.get("design_spec") or boltz.get("spec")
-    if not spec:
-        return locate_ranked_table(project_folder)
-    design_spec = Path(spec)
-    if not design_spec.is_absolute():
-        design_spec = workdir / design_spec
-    if not design_spec.exists():
-        return locate_ranked_table(project_folder)
-    cmd = build_boltzgen_command(
-        {**boltz, "project_folder": str(project_folder)},
-        workdir=workdir,
-        design_spec=design_spec,
-        filtering_only=True,
-    )
-    try:
-        subprocess.run(cmd, cwd=workdir, check=False, capture_output=True)
-    except OSError:
-        return locate_ranked_table(project_folder)
-    return locate_ranked_table(project_folder)
+    `num_proteins` is the API's name for how many designs to generate; it accepts
+    10..1_000_000, so a smaller campaign number is raised to the API minimum and the raw
+    request is recorded either way.
+    """
+    requested = boltz.get("num_designs")
+    if requested is None:
+        requested = boltz.get("budget") or boltz.get("number_of_final_designs")
+    requested = int(requested or MIN_NUM_PROTEINS)
+    params: dict[str, Any] = {
+        "num_proteins": max(requested, MIN_NUM_PROTEINS),
+        "num_proteins_requested": requested,
+        "protocol": str(boltz.get("protocol") or protocol_for_modality(boltz.get("modality"))),
+        "modality": modality_for_api(boltz.get("modality")),
+    }
+    if boltz.get("campaign_name"):
+        params["name"] = str(boltz["campaign_name"])
+    if boltz.get("seed") is not None:
+        params["seed"] = int(boltz["seed"])
+    return params

@@ -1,9 +1,10 @@
-# Worker image: bindi orchestration on top of a BoltzGen runtime.
+# Worker image: bindi orchestration against the hosted Boltz API.
 #
-# Option A — use a pre-built BoltzGen image that provides `boltzgen` on PATH:
 #   docker build -f containers/Dockerfile -t bindi:local .
 #
-# Option B — set BASE_IMAGE to any Python image and install BoltzGen via pip (GPU host required).
+# No GPU, no model weights, no local generator: Boltz runs on https://api.boltz.bio and
+# self-hosting it is not permitted. Supply BOLTZ_API_KEY at run time (never bake it in),
+# and BINDI_APPR_APPROVAL if a real submission is intended.
 ARG BASE_IMAGE=python:3.12-slim-bookworm
 FROM ${BASE_IMAGE}
 
@@ -35,8 +36,6 @@ ENV BINDI_MMSEQS_CMD=mmseqs
 ENV BINDI_BLASTP_CMD=blastp
 ENV BINDI_MAKEBLASTDB_CMD=makeblastdb
 
-RUN pip install --no-cache-dir "boltzgen>=0.3.2"
-
 WORKDIR /opt/bindi
 COPY pyproject.toml README.md LICENSE /opt/bindi/
 COPY src /opt/bindi/src
@@ -44,9 +43,8 @@ COPY campaigns /opt/bindi/campaigns
 COPY fixtures /opt/bindi/fixtures
 RUN pip install --no-cache-dir /opt/bindi
 
-ENV BOLTZGEN_CMD=boltzgen
-# BoltzGen model weights download on first run (~6 GB Boltz + optional ESMFold2 cache).
-ENV BOLTZ_CACHE=/cache
+# Hosted Boltz API. BOLTZ_API_KEY is NOT set here: pass it in at run time.
+ENV BOLTZ_BASE_URL=https://api.boltz.bio
 
 WORKDIR /work
 ENTRYPOINT ["bindi"]

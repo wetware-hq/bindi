@@ -187,14 +187,30 @@ def test_hold_clears_only_when_signed_gated_and_margin_stated():
     ) == []
 
 
-def test_hold_blocks_a_real_generate_before_the_generator_is_called(tmp_path, monkeypatch):
-    monkeypatch.setenv("BOLTZGEN_CMD", "/nonexistent/boltzgen-must-not-run")
+def test_hold_blocks_a_real_generate_before_the_hosted_api_is_reached(tmp_path, monkeypatch):
+    """The hold fires before the generator: no request is built and the API is never called.
+
+    Rewritten from the BOLTZGEN_CMD version: there is no local binary to point at a
+    nonexistent path any more, so the check is that the hosted transport is never used.
+    """
+    from bindi import boltz_hosted
+
+    def explode(*args, **kwargs):
+        raise AssertionError("the hosted Boltz API was contacted despite the design hold")
+
+    monkeypatch.setenv(boltz_hosted.API_KEY_ENV, "sk_bc_ws_test_FAKE-KEY-NOT-A-CREDENTIAL")
+    monkeypatch.setattr(boltz_hosted, "_urllib_transport", explode)
+    monkeypatch.setattr(boltz_hosted, "submit_design", explode)
     policy = {
-        "boltz": {"target": "hPDL1", "project_folder": str(tmp_path / "results")},
+        "boltz": {
+            "target": "hPDL1",
+            "design_spec": "campaigns/nyeso1_a0201_pmhc.yaml",
+            "project_folder": str(tmp_path / "results"),
+        },
         "case": str(PLACEHOLDER),
     }
     with pytest.raises(case_mod.DesignHold):
-        generate(policy, workdir=tmp_path, dry_run=False)
+        generate(policy, workdir=ROOT, dry_run=False)
 
 
 def test_unsigned_consent_refusal():

@@ -3,7 +3,7 @@ for a metric whose direction is not confirmed.
 
 Context: `i_pDAE` is a legacy bindi `rank_on` metric from the BindCraft era. Its direction
 cannot be confirmed, so the gallery must be shown unordered with the rank suppressed,
-never ranked on a guessed sign. Production campaigns should rank on BoltzGen columns such
+never ranked on a guessed sign. Production campaigns should rank on Boltz columns such
 as `design_to_target_iptm` instead.
 """
 import csv

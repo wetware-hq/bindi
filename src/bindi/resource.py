@@ -14,7 +14,7 @@ def resource_descriptor() -> dict[str, Any]:
         "schema": RESOURCE_SCHEMA,
         "name": "bindi",
         "version": VERSION,
-        "description": "Generate and curate protein binders for a target via BoltzGen (Boltz-1/Boltz-2).",
+        "description": "Generate and curate protein binders for a target via the hosted Boltz design API.",
         "capabilities": ["generate", "curate"],
         "inputs": {
             "campaign": {
@@ -31,8 +31,9 @@ def resource_descriptor() -> dict[str, Any]:
             }
         },
         "tool": {
-            "name": "BoltzGen",
-            "url": "https://github.com/HannesStark/boltzgen",
+            "name": "Boltz API",
+            "url": "https://api.boltz.bio/docs/",
+            "hosting": "hosted service (no model weights are downloaded or run locally)",
         },
         "container": {
             "dockerfile": "containers/Dockerfile",
@@ -44,5 +45,6 @@ def resource_descriptor() -> dict[str, Any]:
             "curate": "bindi curate <campaign.json> [--project <folder>]",
             "run": "bindi run <campaign.json>",
             "recruit": "bindi recruit",
+            "job": "bindi job <job_id> [--results]",
         },
     }

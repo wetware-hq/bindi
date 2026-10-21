@@ -15,17 +15,17 @@ Checkpoint inhibitors, targeted biologics, and related modalities need molecules
 | **campaign** | input | policy | `bindi.policy.v1` |
 | **gallery** | output | directory | `bindi.gallery.v1` |
 
-The **campaign** specifies the target, binder modality, BoltzGen design spec, output paths, and ranking rules. It is usually filled from natural-language intent and should be reviewed before any GPU job. The **gallery** is a ranked, scored shortlist with a manifest and structure files for laboratory follow-up.
+The **campaign** specifies the target sequences, binder modality, design count, output paths, and ranking rules. It is usually filled from natural-language intent and should be reviewed before any paid design run. The **gallery** is a ranked, scored shortlist with a manifest and structure files for laboratory follow-up.
 
-The descriptor emitted by `bindi recruit` is defined in [src/bindi/resource.py](src/bindi/resource.py). The repository includes `containers/Dockerfile` to build a worker image whose entrypoint is `bindi` and that installs [BoltzGen](https://github.com/HannesStark/boltzgen) (`boltzgen` on `PATH`).
+The descriptor emitted by `bindi recruit` is defined in [src/bindi/resource.py](src/bindi/resource.py). The repository includes `containers/Dockerfile` to build a worker image whose entrypoint is `bindi`. That image carries the CPU scoring and gating toolchain only: **no design model is installed and no model weights are downloaded**, because design runs on the hosted API.
 
 ## Workflow
 
-**bindi 🐨** orchestrates [BoltzGen](https://github.com/HannesStark/boltzgen) (Boltz-1 diffusion design, Boltz-2 refolding and confidence). **Generate** (`bindi generate`) calls `boltzgen run` using the policy’s `boltz` block (design-spec YAML, protocol, `num_designs`, `budget`) and requires `boltzgen` on `PATH` (or `BOLTZGEN_CMD`) and a GPU for production runs. **Curate** (`bindi curate`) reads metrics under `project_folder` (typically `final_ranked_designs/all_designs_metrics.csv`), applies `curation.rank_on` and `curation.top_n` (default ranking uses Boltz-2 interface confidence `design_to_target_iptm`; bindi reports a relative ranking, not an energy), and writes the gallery path named in the policy.
+**bindi 🐨** designs through the **hosted Boltz API** (`https://api.boltz.bio/compute/v1`); it self-hosts no published model and needs no GPU of its own. **Generate** (`bindi generate`) builds the design request from the policy’s `boltz` block (`target_entities`, `epitope_residues`, `binder`, `num_proteins`), writes it to `request.json` under `project_folder` as a content-addressed artifact, asks the API what it would cost — free and read-only — and then **stops**. It submits only when given an explicit human approval record (`--approve`), so running the command is never by itself consent to spend. Authentication is the `BOLTZ_API_KEY` environment variable, passed as the `x-api-key` header and never logged. `bindi job <job_id>` reads a run’s status, and `bindi job <job_id> --results` lists its generated designs; download artifacts promptly, since their URLs are short-lived and run data is deleted after the workspace retention window. **Curate** (`bindi curate`) reads metrics under `project_folder` (typically `final_ranked_designs/all_designs_metrics.csv`), applies `curation.rank_on` and `curation.top_n` (default ranking uses Boltz-2 interface confidence `design_to_target_iptm`; bindi reports a relative ranking, not an energy), and writes the gallery path named in the policy.
 
-Before a production PD-L1 run, fetch campaign structures: `campaigns/fetch_targets.sh`.
+The design endpoint requires the **legacy** request body (`num_proteins`, `target`, `binder_specification`). The type-discriminated `{"type": "binder", …}` body documented as the migration target is **rejected live** with `HTTP 400 VALIDATION_ERROR` (`binder_specification is required`), verified 2026-10-21 against both the design and estimate-cost endpoints; the client refuses it locally so the failure is free. `fixtures/boltz_design_request_legacy.json` is the exact body the API accepted and is the schema fixture the tests pin against.
 
-Campaigns conform to `bindi.policy.v1`, a thin wrapper around BoltzGen parameters plus curation metadata; legacy `bindcraft` keys and bare BindCraft-style JSON are migrated automatically. The shipped example `campaigns/pdl1.json` targets human PD-L1 via `campaigns/pdl1_miniprotein.yaml`. `bindi stub` can draft a policy from intent, but that draft must be edited before production. `bindi run <policy> --dry-run` smoke-tests curation on fixtures without a GPU and does not replace binding or structural validation.
+Campaigns conform to `bindi.policy.v1`, a thin wrapper around the design request plus curation metadata; legacy `bindcraft` keys and bare BindCraft-style JSON are migrated automatically. The shipped example `campaigns/pdl1.json` targets the human PD-L1 extracellular region (UniProt Q9NZQ7 residues 19–238, copied verbatim). `bindi stub` can draft a policy from intent, but that draft must be edited before production — it ships with empty `target_entities` on purpose, because the hosted API takes sequences and bindi will not guess one. `bindi run <policy> --dry-run` smoke-tests curation on fixtures with no API call and does not replace binding or structural validation.
 
 ## Gallery
 
@@ -88,22 +88,22 @@ Exit codes: `0` fixture-backed run completed, `1` case record invalid, `2` desig
 
 ## Bar
 
-`pip install -e .` then `pytest` (109 passed; 11 skipped without `mmseqs2` on PATH) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
+`pip install -e .` then `pytest` (130 passed; 11 skipped without `mmseqs2` on PATH) is bindi's bar, with `bindi run campaigns/pdl1.json --dry-run` as a no-GPU curation smoke-test. What a green covers and what it does not — so a green here is not read as the same assurance as a green in a sibling repo — is [BAR.md](BAR.md).
 
 ## Deployment
 
-Install from source with `pip install -e .` or `uv pip install -e .`, install BoltzGen (`pip install boltzgen`) on a GPU host, fetch campaign targets (`campaigns/fetch_targets.sh`), then run `bindi run campaigns/pdl1.json`, or build and run the container:
+Install from source with `pip install -e .` or `uv pip install -e .`, export `BOLTZ_API_KEY`, then run `bindi run campaigns/pdl1.json` (which estimates and stops) or build and run the container:
 
 ```bash
 docker build -f containers/Dockerfile -t bindi:local .
-docker run --gpus all -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
+docker run -e BOLTZ_API_KEY -v "$PWD:/work" -w /work bindi:local run campaigns/pdl1.json
 ```
 
-BoltzGen downloads model weights on first use (~6 GB for Boltz checkpoints; additional cache for inverse folding / ESMFold2 depending on protocol). Set `BOLTZ_CACHE` or BoltzGen’s `--cache` to a persistent volume in production.
+No GPU, no model weights and no ~6 GB first-run download: design compute happens on the hosted API and is billed per design. Note that a rebuild of `containers/Dockerfile` no longer reproduces the pinned `7e8762ae` image digest — that digest predates the removal of the self-hosted layer, and a rebuilt image is a new content address that must be recorded as such.
 
 ## License
 
-**bindi 🐨** is released under the MIT license. [BoltzGen](https://github.com/HannesStark/boltzgen) is a separate dependency with its own license terms.
+**bindi 🐨** is released under the MIT license. The hosted [Boltz API](https://api.boltz.bio/docs/) is a separate paid service with its own [terms](https://boltz.com/terms); bindi redistributes no model weights.
 
 ## References
 
@@ -117,7 +117,7 @@ Each entry is tied to the one claim in this README that rests on it; nothing is 
 
 ### Preprints and tool repositories (not peer-reviewed)
 
-- **Stärk, H. et al.** BoltzGen: Toward Universal Binder Design. *bioRxiv* (2025). DOI: 10.1101/2025.11.20.689494. — The design step: **bindi 🐨** orchestrates [BoltzGen](https://github.com/HannesStark/boltzgen) to generate de novo binders; ranking uses Boltz-2 confidence metrics such as `design_to_target_iptm`, not absolute affinity.
+- **Stärk, H. et al.** BoltzGen: Toward Universal Binder Design. *bioRxiv* (2025). DOI: 10.1101/2025.11.20.689494. — The design step: **bindi 🐨** submits to the hosted Boltz design API, which serves binder-design models of this family (the live run reports engine `boltzprot`); ranking uses Boltz-2 confidence metrics such as `design_to_target_iptm`, not absolute affinity. bindi does not run these models itself.
 - **AbBiBench** (Antibody Binding Benchmarking). arXiv:2506.04235 (2025). — Cited for **benchmark design only**: treating the antibody–antigen complex as the scored unit informs how the multiverse scorer-ensemble would be evaluated. It is not evidence that the ensemble works, which is why the ensemble ships off by default.
 
 ### Unsupported claims (no peer-reviewed support)

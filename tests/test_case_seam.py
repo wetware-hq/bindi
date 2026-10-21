@@ -181,8 +181,11 @@ def test_hold_clears_only_when_signed_gated_and_margin_stated():
     ) == []
 
 
-def test_hold_blocks_a_real_generate_before_bindcraft_is_called(tmp_path, monkeypatch):
-    monkeypatch.setenv("BINDCRAFT_CMD", "/nonexistent/bindcraft-must-not-run")
+def test_hold_blocks_a_real_generate_before_the_design_api_is_called(tmp_path, monkeypatch):
+    # No API key in the environment: if the hold ever failed to fire, the client would
+    # raise instead of silently reaching the paid endpoint, so this test cannot pass for
+    # the wrong reason.
+    monkeypatch.delenv("BOLTZ_API_KEY", raising=False)
     policy = {
         "bindcraft": {"target": "hPDL1", "project_folder": str(tmp_path / "results")},
         "case": str(PLACEHOLDER),

@@ -1,12 +1,12 @@
 [project]
 name = "bindi"
 version = "0.2.0"
-description = "Generate and curate protein binders via BoltzGen (Boltz-1/Boltz-2) campaigns."
+description = "Generate and curate protein binders via the hosted Boltz design API."
 readme = "README.md"
 requires-python = ">=3.11"  # tomllib (stdlib) for cited TOML data files
 license = "MIT"
 authors = [{ name = "wetware", email = "hellowetware@gmail.com" }]
-keywords = ["protein", "binder", "Boltz", "BoltzGen", "de novo design"]
+keywords = ["protein", "binder", "Boltz", "de novo design"]
 classifiers = [
   "Intended Audience :: Science/Research",
   "Topic :: Scientific/Engineering :: Bio-Informatics",
@@ -32,10 +32,12 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
+# `packages` already carries src/bindi/data (the cited TOML data files) into the wheel.
+# A force-include of the same directory made hatchling add every data file twice and the
+# wheel build aborted ("A second file is being added to the wheel archive at the same
+# path"), which broke `pip install .` -- the exact install the container does. Editable
+# installs mask it, which is why the test suite never saw it.
 packages = ["src/bindi"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"src/bindi/data" = "bindi/data"
 
 [tool.hatch.build.targets.sdist]
 include = [

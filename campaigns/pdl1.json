@@ -1,19 +1,33 @@
 {
   "schema": "bindi.policy.v1",
   "query": "De novo miniprotein binders against human PD-L1 for blocking the PD-1 interaction.",
+  "_target_provenance": "Target chain A is the extracellular region of human PD-L1 (UniProt Q9NZQ7, CD274_HUMAN), residues 19-238, i.e. the 'Extracellular' topological domain as annotated by UniProt (signal peptide 1-18 removed). Sequence copied verbatim from rest.uniprot.org on 2026-10-21; no residue was edited. Epitope residues are NOT asserted here: none has been established for this campaign, so the whole chain is offered and the API is left to choose.",
   "boltz": {
-    "target": "hPDL1",
     "modality": "binder",
     "campaign_name": "pdl1",
-    "design_spec": "campaigns/pdl1_miniprotein.yaml",
-    "protocol": "protein-anything",
-    "num_designs": 500,
-    "budget": 10,
+    "num_proteins": 10,
     "number_of_final_designs": 10,
-    "project_folder": "results/pdl1"
+    "project_folder": "results/pdl1",
+    "target_entities": [
+      {
+        "chain_ids": [
+          "A"
+        ],
+        "value": "FTVTVPKDLYVVEYGSNMTIECKFPVEKQLDLAALIVYWEMEDKNIIQFVHGEEDLKVQHSSYRQRARLLKDQLSLGNAALQITDVKLQDAGVYRCMISYGGADYKRITVKVNAPYNKINQRILVVDPVTSEHELTCQAEGYPKAEVIWTSSDHQVLSGKTTTTNSKREEKLFNVTSTLRINTTTNEIFYCTFRRLDPEENHTAELVIPELPLAHPPNER"
+      }
+    ],
+    "binder": {
+      "modality": "custom_protein",
+      "chain_ids": [
+        "D"
+      ],
+      "length": "60..100"
+    }
   },
   "curation": {
-    "rank_on": ["design_to_target_iptm"],
+    "rank_on": [
+      "design_to_target_iptm"
+    ],
     "top_n": 10
   },
   "gallery": "gallery"

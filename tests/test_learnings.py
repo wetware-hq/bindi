@@ -121,18 +121,18 @@ def test_benchmark_record_present_and_unchecked(tmp_path):
 
 def test_deployable_path_rejects_evaluation_only_tools():
     with pytest.raises(data.LicenceTierError):
-        data.assert_deployable(["BoltzGen", "FEP+"])
+        data.assert_deployable(["Boltz API", "FEP+"])
     with pytest.raises(data.LicenceTierError):
         data.assert_deployable(["PyRosetta"])
 
 
 def test_deployable_path_accepts_deployable_tools():
-    data.assert_deployable(["BoltzGen"])  # must not raise
+    data.assert_deployable(["Boltz API"])  # must not raise
 
 
 def test_tool_tiers_are_cited():
     tiers = data.tool_tiers()
-    assert "BoltzGen" in tiers
+    assert "Boltz API" in tiers
     for name, entry in tiers.items():
         assert entry.get("tier") in {"deployable", "evaluation_only"}, name
         assert entry.get("licence"), name

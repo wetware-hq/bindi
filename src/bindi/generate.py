@@ -1,20 +1,25 @@
-"""Invoke BoltzGen design for a resolved campaign."""
+"""Submit a resolved campaign to the hosted Boltz design API.
+
+No design model runs on our hardware. `generate` builds the legacy-shaped request,
+records it under the campaign folder as a content-addressed artifact, asks the API
+what it would cost -- free and read-only -- and then STOPS unless the caller hands
+over an explicit human approval record. Approval is never inferred from the fact
+that someone ran the command.
+"""
 
 from __future__ import annotations
 
 import json
 import shutil
-import subprocess
 from pathlib import Path
 from typing import Any
 
+from . import boltz as boltz_api
 from .boltz import (
     LEGACY_RANK_STAGE,
     LEGACY_RANKED_NAME,
     RANKED_METRICS,
     RANKED_STAGE,
-    build_boltzgen_command,
-    resolve_design_spec_path,
 )
 from .case import assert_design_allowed, case_path_from, resolve_target
 from .policy import resolve_boltz_campaign
@@ -25,7 +30,7 @@ def generate(
     *,
     workdir: Path | None = None,
     dry_run: bool = False,
-    extra_args: list[str] | None = None,
+    approval: str | None = None,
 ) -> dict[str, Any]:
     base = workdir or Path.cwd()
     base.mkdir(parents=True, exist_ok=True)
@@ -52,18 +57,46 @@ def generate(
     if case_path_from(policy) is not None:
         assert_design_allowed(resolve_target(policy))
 
-    design_spec = resolve_design_spec_path(boltz, base)
-    cmd = build_boltzgen_command(boltz, workdir=base, design_spec=design_spec, extra_args=extra_args)
-    completed = subprocess.run(cmd, cwd=base, check=False)
-    if completed.returncode != 0:
-        raise RuntimeError(f"boltzgen run failed with exit code {completed.returncode}")
+    body = boltz_api.build_design_request(boltz)
+    digest = boltz_api.request_digest(body)
+    request_file = campaign_dir / "request.json"
+    request_file.write_text(boltz_api.canonical_json(body) + "\n", encoding="utf-8")
 
-    return {
-        "status": "completed",
+    estimate = boltz_api.estimate_cost(body)
+
+    common = {
         "campaign_file": str(campaign_file),
         "project_folder": str(campaign_dir),
         "gallery": str(gallery_path),
-        "design_spec": str(design_spec),
+        "request_file": str(request_file),
+        "request_digest": digest,
+        "estimate": estimate,
+    }
+
+    if approval is None or not str(approval).strip():
+        # Not an error: the free, read-only half of the command is the useful default.
+        return {
+            "status": "awaiting_approval",
+            "detail": (
+                "Cost estimated, nothing submitted. Re-run with an explicit approval "
+                "record to spend."
+            ),
+            **common,
+        }
+
+    job_id = boltz_api.submit(body, approval=approval)
+    job_file = campaign_dir / "job.json"
+    job_file.write_text(
+        json.dumps({"job_id": job_id, "request_digest": digest, "approval": approval},
+                   indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    return {
+        "status": "submitted",
+        "job_id": job_id,
+        "job_file": str(job_file),
+        "approval": approval,
+        **common,
     }
 
 
@@ -74,7 +107,6 @@ def _write_dry_run_outputs(campaign_dir: Path) -> None:
         "demo_seq1,1,0.72,ACDEFGHIKLMNPQRSTVWY\n"
         "demo_seq2,2,0.68,ACDEFGHIKLMNPQRSTVWYAC\n"
     )
-    # BoltzGen layout
     ranked_dir = campaign_dir / RANKED_STAGE
     ranked_dir.mkdir(parents=True, exist_ok=True)
     (ranked_dir / RANKED_METRICS).write_text(text, encoding="utf-8")

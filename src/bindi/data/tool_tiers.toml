@@ -8,10 +8,14 @@
 # or terms URL so a reader can verify the tier.
 schema = "bindi.tool_tiers.v1"
 
-[tools.BoltzGen]
+# bindi's only generator path. The hosted Boltz design API is a paid service, not a
+# redistributed model: no weights are downloaded and no published model runs on our
+# hardware, so nothing here is licence-restricted as a dependency. Spend is gated by a
+# human in the fleet spec, not by this tier.
+[tools."Boltz API"]
 tier = "deployable"
-licence = "MIT"
-citation = "https://github.com/HannesStark/boltzgen/blob/main/LICENSE"
+licence = "Hosted commercial API, pay per use (no model weights redistributed)"
+citation = "https://boltz.com/terms"
 
 [tools."FEP+"]
 tier = "evaluation_only"

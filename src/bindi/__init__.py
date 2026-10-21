@@ -1,4 +1,4 @@
-"""bindi: generate and curate protein binders via BoltzGen campaigns."""
+"""bindi: generate and curate protein binders via the hosted Boltz design API."""
 
 VERSION = "0.2.0"
 

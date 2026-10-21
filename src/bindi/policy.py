@@ -1,4 +1,4 @@
-"""Campaign policy: BoltzGen / Boltz settings plus bindi curation metadata."""
+"""Campaign policy: hosted Boltz design settings plus bindi curation metadata."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from .boltz import protocol_for_modality
 
 SCHEMA = "bindi.policy.v1"
 
@@ -25,15 +24,16 @@ def load_policy(path: str | Path | None, payload: dict[str, Any] | None = None) 
 
 
 def _migrate_bindcraft_block(bindcraft: dict[str, Any]) -> dict[str, Any]:
-    """Map legacy BindCraft2 campaign fields onto BoltzGen policy keys."""
+    """Map legacy BindCraft2 campaign fields onto current policy keys."""
     boltz = deepcopy(bindcraft)
     if "budget" not in boltz and boltz.get("number_of_final_designs") is not None:
         boltz["budget"] = boltz["number_of_final_designs"]
     if "num_designs" not in boltz:
         final_n = int(boltz.get("number_of_final_designs") or boltz.get("budget") or 10)
         boltz["num_designs"] = max(final_n * 50, 50)
-    if "protocol" not in boltz:
-        boltz["protocol"] = protocol_for_modality(boltz.get("modality"))
+    # `protocol` is gone on purpose: it named a local design-binary protocol and has
+    # no counterpart in the hosted API, which takes a modality on binder_specification.
+    boltz.pop("protocol", None)
     return boltz
 
 
@@ -58,7 +58,7 @@ def normalize_policy(document: dict[str, Any]) -> dict[str, Any]:
 
     if "boltz" not in doc and "bindcraft" in doc:
         warnings.warn(
-            "policy.bindcraft is deprecated; use policy.boltz (BindCraft2 was replaced by BoltzGen).",
+            "policy.bindcraft is deprecated; use policy.boltz (the design backend is the hosted Boltz API).",
             DeprecationWarning,
             stacklevel=2,
         )
@@ -77,7 +77,7 @@ def resolve_boltz_campaign(
     *,
     workdir: Path | None = None,
 ) -> tuple[dict[str, Any], Path]:
-    """Return BoltzGen campaign dict and the gallery directory path."""
+    """Return the design campaign dict and the gallery directory path."""
     policy = normalize_policy(policy)
     boltz = deepcopy(policy.get("boltz") or {})
     if not boltz:
@@ -109,13 +109,18 @@ def resolve_bindcraft_campaign(
 
 def policy_from_nl_stub(query: str, **overrides: Any) -> dict[str, Any]:
     """Minimal helper for agents filling a campaign from natural language."""
+    # A stub is a skeleton, not a runnable campaign: target_entities carries the target
+    # SEQUENCES the hosted API requires and must be filled in before any real run.
     boltz = {
-        "target": overrides.pop("target", "hPDL1"),
         "modality": overrides.pop("modality", "binder"),
         "number_of_final_designs": overrides.pop("number_of_final_designs", 5),
         "project_folder": overrides.pop("project_folder", "results/campaign"),
-        "design_spec": overrides.pop("design_spec", "campaigns/pdl1_miniprotein.yaml"),
+        "target_entities": overrides.pop("target_entities", []),
+        "binder": overrides.pop("binder", {"chain_ids": ["D"], "length": "60..100"}),
     }
+    target = overrides.pop("target", None)
+    if target is not None:
+        boltz["target"] = target
     boltz.update(overrides)
     boltz = _migrate_bindcraft_block(boltz)
     return {

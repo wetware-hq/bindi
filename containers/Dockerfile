@@ -1,9 +1,20 @@
-# Worker image: bindi orchestration on top of a BoltzGen runtime.
+# Worker image: bindi orchestration and the CPU scoring/gating toolchain.
 #
-# Option A — use a pre-built BoltzGen image that provides `boltzgen` on PATH:
 #   docker build -f containers/Dockerfile -t bindi:local .
 #
-# Option B — set BASE_IMAGE to any Python image and install BoltzGen via pip (GPU host required).
+# No design model is installed here and no model weights are downloaded. bindi designs
+# through the HOSTED Boltz API (see src/bindi/boltz.py); the only secret the worker
+# needs at run time is BOLTZ_API_KEY, which is passed in at run time and never baked in.
+#
+# CONTENT-ADDRESS WARNING — READ BEFORE BUILDING.
+# The fleet's content address pins
+#   ghcr.io/wetware-hq/bindi-fleet-env@sha256:7e8762aebc3390611aafe0b67d925e567199d519e638113a80da33b86246a8e6
+# That digest was built BEFORE the self-hosted design layer was removed from this file
+# (2026-10-21). Any rebuild from this Dockerfile therefore produces a DIFFERENT digest.
+# That is expected, not a fault — but a new digest is a new content address: record it
+# afresh in the fleet spec alongside the old one, do not overwrite 7e8762ae, and do not
+# claim the new image is the one the existing records refer to. Nothing in this change
+# rebuilds or repushes an image.
 ARG BASE_IMAGE=python:3.12-slim-bookworm
 FROM ${BASE_IMAGE}
 
@@ -35,18 +46,12 @@ ENV BINDI_MMSEQS_CMD=mmseqs
 ENV BINDI_BLASTP_CMD=blastp
 ENV BINDI_MAKEBLASTDB_CMD=makeblastdb
 
-RUN pip install --no-cache-dir "boltzgen>=0.3.2"
-
 WORKDIR /opt/bindi
 COPY pyproject.toml README.md LICENSE /opt/bindi/
 COPY src /opt/bindi/src
 COPY campaigns /opt/bindi/campaigns
 COPY fixtures /opt/bindi/fixtures
 RUN pip install --no-cache-dir /opt/bindi
-
-ENV BOLTZGEN_CMD=boltzgen
-# BoltzGen model weights download on first run (~6 GB Boltz + optional ESMFold2 cache).
-ENV BOLTZ_CACHE=/cache
 
 WORKDIR /work
 ENTRYPOINT ["bindi"]

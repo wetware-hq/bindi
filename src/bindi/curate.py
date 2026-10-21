@@ -1,4 +1,4 @@
-"""Build a ranked gallery directory from a BoltzGen campaign folder."""
+"""Build a ranked gallery directory from a Boltz design campaign folder."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from .policy import normalize_policy, resolve_boltz_campaign
 GALLERY_SCHEMA = "bindi.gallery.v1"
 
 # bindi's only generator path. Must stay deployable (see src/bindi/data/tool_tiers.toml).
-DEPLOYABLE_TOOLS = ["BoltzGen"]
+DEPLOYABLE_TOOLS = ["Boltz API"]
 
 RELATIVE_CLAIM = (
     "Relative ranking among the designs in this campaign only. No absolute affinity, "
@@ -45,7 +45,7 @@ ENSEMBLE_BASIS = (
 # The rank column is a pass-signal ordering, not potency. Boltz-2 confidence scores (ipTM etc.)
 # reflect predicted complex quality, not measured binding affinity.
 RANK_MEANING = (
-    "Rank is a pass-signal ordering from Boltz-2/BoltzGen confidence metrics (e.g. design_to_target_iptm), "
+    "Rank is a pass-signal ordering from Boltz-2 confidence metrics (e.g. design_to_target_iptm), "
     "not an affinity or potency ordering."
 )
 
@@ -239,8 +239,6 @@ def curate(
     *,
     project_folder: Path | str | None = None,
     workdir: Path | None = None,
-    use_bindcraft_rank: bool = False,
-    use_boltz_rank: bool = False,
     use_ensemble: bool = False,
     fixture_path: bool = False,
 ) -> dict[str, Any]:
@@ -269,13 +267,10 @@ def curate(
     data.assert_deployable(DEPLOYABLE_TOOLS)
 
     campaign_root = Path(project_folder or boltz["project_folder"])
-    rerank = use_boltz_rank or use_bindcraft_rank
-    if rerank:
-        ranked_csv = boltz_mod.maybe_rerank_with_boltzgen(
-            boltz, campaign_root, rank_on, workdir=base
-        )
-    else:
-        ranked_csv = _locate_ranked_table(campaign_root)
+    # No re-ranking hook: ranking the design engine's own output was a local-runner
+    # affordance (re-running its filtering step on our GPU). The hosted API ranks on
+    # its side; bindi reads the table it produced.
+    ranked_csv = _locate_ranked_table(campaign_root)
     if ranked_csv is None:
         raise FileNotFoundError(f"no ranked table under {campaign_root}")
 
@@ -408,7 +403,7 @@ def curate(
         manifest["ordering"] = "unordered"
         manifest["rank_suppressed_reason"] = (
             "Ranking requested on " + ", ".join(unconfirmed) + ", whose direction is "
-            "unconfirmed (legacy bindi metric from the BindCraft era; BoltzGen exposes "
+            "unconfirmed (legacy bindi metric from the BindCraft era; the Boltz design engine exposes "
             "design_to_target_iptm and min_design_to_target_pae instead). "
             "Candidates are shown unordered rather than ranked on a direction the code cannot justify."
         )

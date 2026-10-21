@@ -1,0 +1,55 @@
+{
+  "num_proteins": 10,
+  "target": {
+    "type": "no_template",
+    "entities": [
+      {
+        "type": "protein",
+        "chain_ids": [
+          "A"
+        ],
+        "value": "GSHSMRYFFTSVSRPGRGEPRFIAVGYVDDTQFVRFDSDAASQRMEPRAPWIEQEGPEYWDQETRNVKAQSQTDRVDLGTLRGYYNQSEAGSHTIQIMYGCDVGSDGRFLRGYRQDAYDGKDYIALNEDLRSWTAADMAAQITKRKWEAAHEAEQLRAYLDGTCVEWLRRYLENGKETLQRTDPPKTHMTHHPISDHEATLRCWALGFYPAEITLTWQRDGEDQTQDTELVETRPAGDGTFQKWAAVVVPSGEEQRYTCHVQHEGLPKPLTLRWE"
+      },
+      {
+        "type": "protein",
+        "chain_ids": [
+          "B"
+        ],
+        "value": "IQRTPKIQVYSRHPAENGKSNFLNCYVSGFHPSDIEVDLLKNGERIEKVEHSDLSFSKDWSFYLLYYTEFTPTEKDEYACRVNHVTLSQPKIVKWDRDM"
+      },
+      {
+        "type": "protein",
+        "chain_ids": [
+          "C"
+        ],
+        "value": "SLLMWITQC"
+      }
+    ],
+    "epitope_residues": {
+      "C": [
+        0,
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8
+      ]
+    }
+  },
+  "binder_specification": {
+    "type": "no_template",
+    "modality": "custom_protein",
+    "entities": [
+      {
+        "type": "designed_protein",
+        "chain_ids": [
+          "D"
+        ],
+        "value": "60..100"
+      }
+    ]
+  }
+}

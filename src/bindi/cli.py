@@ -13,6 +13,7 @@ from .curate import curate
 from . import design_engine
 from .case import load_case
 from .e2e import EXIT_CASE_ERROR, EXIT_HOLD, case_run
+from . import boltz as boltz_api
 from .generate import generate
 from .policy import load_policy, policy_from_nl_stub
 from .resource import resource_descriptor
@@ -39,32 +40,36 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--version", action="version", version=f"bindi {VERSION}")
     sub = parser.add_subparsers(dest="command")
 
-    gen = sub.add_parser("generate", help="Run BoltzGen design for a campaign policy")
+    gen = sub.add_parser(
+        "generate",
+        help="Estimate, and with explicit approval submit, a hosted Boltz design run",
+    )
     gen.add_argument("policy", nargs="?", help="Campaign policy JSON (or '-' for stdin)")
     gen.add_argument("--workdir", type=Path, default=Path.cwd())
-    gen.add_argument("--dry-run", action="store_true", help="Write fixture ranked output (no GPU)")
+    gen.add_argument("--dry-run", action="store_true", help="Write fixture ranked output (no API call)")
+    gen.add_argument(
+        "--approve",
+        metavar="RECORD",
+        help=(
+            "Human approval record for this spend (who approved it). THIS SPENDS MONEY. "
+            "Without it, generate estimates the cost and submits nothing."
+        ),
+    )
 
     cur = sub.add_parser("curate", help="Build a gallery from campaign results")
     cur.add_argument("policy", nargs="?", help="Campaign policy JSON")
-    cur.add_argument("--project", type=Path, help="BoltzGen output directory override")
+    cur.add_argument("--project", type=Path, help="Campaign output directory override")
     cur.add_argument("--workdir", type=Path, default=Path.cwd())
-    cur.add_argument(
-        "--boltz-rank",
-        action="store_true",
-        help="Re-run BoltzGen filtering before building the gallery",
-    )
-    cur.add_argument(
-        "--bindcraft-rank",
-        action="store_true",
-        help=argparse.SUPPRESS,  # legacy alias for --boltz-rank
-    )
 
     full = sub.add_parser("run", help="Generate then curate")
     full.add_argument("policy", nargs="?", help="Campaign policy JSON")
     full.add_argument("--workdir", type=Path, default=Path.cwd())
     full.add_argument("--dry-run", action="store_true")
-    full.add_argument("--boltz-rank", action="store_true")
-    full.add_argument("--bindcraft-rank", action="store_true", help=argparse.SUPPRESS)
+    full.add_argument(
+        "--approve",
+        metavar="RECORD",
+        help="Human approval record for this spend. THIS SPENDS MONEY.",
+    )
 
     e2e = sub.add_parser(
         "case-run",
@@ -136,6 +141,17 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("recruit", help="Print resource descriptor JSON for agent recruitment")
 
+    job = sub.add_parser(
+        "job",
+        help="Read a hosted design job: status, or its generated results (free, read-only)",
+    )
+    job.add_argument("job_id", help="Design job id, e.g. prot_des_...")
+    job.add_argument(
+        "--results",
+        action="store_true",
+        help="List generated results instead of run status (artifact URLs are short-lived)",
+    )
+
     stub = sub.add_parser("stub", help="Build a starter policy from a one-line query")
     stub.add_argument("query", help="Natural-language design intent")
     stub.add_argument("--target", default="hPDL1")
@@ -161,6 +177,15 @@ def main(argv: list[str] | None = None) -> int:
             scorer_id=args.scorer,
         )
         json.dump(report, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return 0
+
+    if command == "job":
+        if args.results:
+            payload = {"job_id": args.job_id, "results": list(boltz_api.iter_results(args.job_id))}
+        else:
+            payload = boltz_api.get_status(args.job_id)
+        json.dump(payload, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
         return 0
 
@@ -215,23 +240,18 @@ def main(argv: list[str] | None = None) -> int:
         parser.error(f"{command} requires a policy path")
     policy = _load(policy_path)
 
-    boltz_rank = getattr(args, "boltz_rank", False) or getattr(args, "bindcraft_rank", False)
-
     if command == "generate":
-        result = generate(policy, workdir=args.workdir, dry_run=args.dry_run)
-    elif command == "curate":
-        result = curate(
-            policy,
-            project_folder=args.project,
-            workdir=args.workdir,
-            use_boltz_rank=boltz_rank,
+        result = generate(
+            policy, workdir=args.workdir, dry_run=args.dry_run, approval=args.approve
         )
+    elif command == "curate":
+        result = curate(policy, project_folder=args.project, workdir=args.workdir)
     else:
         result = run(
             policy,
             workdir=args.workdir,
             dry_run=args.dry_run,
-            use_boltz_rank=boltz_rank,
+            approval=args.approve,
         )
 
     json.dump(result, sys.stdout, indent=2)
